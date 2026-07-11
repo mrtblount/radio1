@@ -1,0 +1,8 @@
+# Team Radio Specs
+> Specification documents for LLM context
+
+## Docs
+- [Specification](specs/SPEC.md): Product requirements and invariants
+- [Technical Plan](specs/PLAN.md): Architecture and implementation design
+- [Tasks](specs/TASKS.md): Atomic implementation tasks
+- [Integration Guide](INTEGRATION.md): Embedding or gating the radio behind your app

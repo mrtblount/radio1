@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.env
+.env.local
+.env*.local
+.vercel/
+.claude/worktrees/
+.playwright-mcp/
+*.log
+.DS_Store
+.vercel
+private/
+tsconfig.tsbuildinfo
+*.tsbuildinfo
