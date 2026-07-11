@@ -208,6 +208,7 @@
   .roster .chev { margin-left: auto; color: #6f7580; font-size: 0.7rem; }
   .talk-zone { display: flex; flex-direction: column; align-items: center; padding: 2.1rem 0 0.4rem; }
   .talk-ring {
+    position: relative;
     width: 64%;
     aspect-ratio: 1;
     border-radius: 50%;
@@ -215,9 +216,40 @@
     display: grid;
     place-items: center;
     background: radial-gradient(circle at 50% 40%, #17181c 0%, #0e0f12 70%);
-    box-shadow:
-      0 0 34px rgba(255, 176, 32, 0.35),
-      inset 0 0 22px rgba(0, 0, 0, 0.6);
+    cursor: pointer;
+    transition: transform 130ms ease;
+    animation: ring-breathe 3.4s ease-in-out infinite;
+  }
+  .talk-ring:hover { transform: translateY(2px) scale(0.99); animation: ring-breathe-big 1.7s ease-in-out infinite; }
+  .talk-ring:active { transform: translateY(4px) scale(0.975); }
+  @keyframes ring-breathe {
+    0%, 100% { box-shadow: 0 0 26px rgba(255, 176, 32, 0.30), inset 0 0 22px rgba(0, 0, 0, 0.6); }
+    50%      { box-shadow: 0 0 44px 7px rgba(255, 176, 32, 0.44), inset 0 0 22px rgba(0, 0, 0, 0.6); }
+  }
+  @keyframes ring-breathe-big {
+    0%, 100% { box-shadow: 0 0 40px 5px rgba(255, 176, 32, 0.48), inset 0 0 22px rgba(0, 0, 0, 0.6); }
+    50%      { box-shadow: 0 0 68px 15px rgba(255, 176, 32, 0.62), inset 0 0 22px rgba(0, 0, 0, 0.6); }
+  }
+  /* one-shot pulse ring that emanates on tap */
+  .talk-ring::after {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    border: 4px solid rgba(255, 176, 32, 0.85);
+    opacity: 0;
+    pointer-events: none;
+  }
+  .talk-ring.tapped::after { animation: ring-emit 550ms ease-out; }
+  @keyframes ring-emit {
+    0%   { transform: scale(1); opacity: 0.85; }
+    100% { transform: scale(1.38); opacity: 0; }
+  }
+  /* RX lamp winks like a live status LED */
+  .rx-live { animation: rx-wink 4.2s ease-in-out infinite; }
+  @keyframes rx-wink {
+    0%, 86%, 94%, 100% { opacity: 1; }
+    89%, 91% { opacity: 0.2; }
   }
   .talk-ring span {
     font-size: clamp(1.05rem, 5.4vw, 1.35rem);
@@ -253,7 +285,7 @@
   }
   @media (prefers-reduced-motion: reduce) {
     html { scroll-behavior: auto; }
-    * { transition: none !important; }
+    * { transition: none !important; animation: none !important; }
   }
 </style>
 </head>
@@ -335,7 +367,7 @@
         </div>
         <div class="txrx">
           <div class="lamp"><i></i><span>TX</span></div>
-          <div class="lamp"><i style="background: var(--green); box-shadow: 0 0 5px rgba(70,224,138,.6)"></i><span>RX</span></div>
+          <div class="lamp"><i class="rx-live" style="background: var(--green); box-shadow: 0 0 5px rgba(70,224,138,.6)"></i><span>RX</span></div>
         </div>
         <div class="roster">
           <span class="dot-green"></span>
@@ -378,6 +410,13 @@
       var next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
       apply(next);
       try { localStorage.setItem("radio1-theme", next); } catch (e) {}
+    });
+
+    var ring = document.querySelector(".talk-ring");
+    ring.addEventListener("pointerdown", function () {
+      ring.classList.remove("tapped");
+      void ring.offsetWidth; // restart the one-shot animation
+      ring.classList.add("tapped");
     });
   })();
 </script>
