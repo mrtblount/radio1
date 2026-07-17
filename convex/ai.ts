@@ -181,12 +181,24 @@ export const ctxRoster = internalQuery({
 });
 
 export const ctxTransmissions = internalQuery({
-  args: { hours: v.number(), channel: v.optional(v.string()) },
-  handler: async (ctx, { hours, channel }) => {
+  args: {
+    hours: v.number(),
+    userId: v.string(),
+    channel: v.optional(v.string()),
+  },
+  handler: async (ctx, { hours, userId, channel }) => {
     const since = Date.now() - hours * 3600_000;
+    // The agent must not read other people's direct-line transmissions.
+    const channels = await ctx.db.query("channels").collect();
+    const visible = new Set(
+      channels
+        .filter((c) => c.kind !== "dm" || c.dmMembers?.includes(userId))
+        .map((c) => c.key),
+    );
     const all = await ctx.db.query("transmissions").order("desc").take(200);
     return all
       .filter((t) => t.startedAt > since)
+      .filter((t) => visible.has(t.channelKey))
       .filter((t) => !channel || t.channelKey === channel)
       .slice(0, 60)
       .map((t) => ({

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { RadioState } from "../hooks/useRadio";
 import { CHANNELS } from "../lib/radio/types";
 import { loadAccessCode } from "../lib/platform/identity";
@@ -13,6 +13,8 @@ export interface DirectInfo {
 interface Props {
   state: RadioState;
   sessionId: string;
+  /** The radio tab is the visible tab (gates the spacebar PTT key). */
+  active?: boolean;
   direct?: DirectInfo | null;
   onPressStart: () => void;
   onPressEnd: () => void;
@@ -24,6 +26,7 @@ interface Props {
 export function ChannelScreen({
   state,
   sessionId,
+  active = true,
   direct,
   onPressStart,
   onPressEnd,
@@ -35,7 +38,7 @@ export function ChannelScreen({
     state;
 
   const receiving = floor !== null && floor.sessionId !== sessionId;
-  const channelNumber = Math.max(1, CHANNELS.indexOf(channel as never) + 1);
+  const channelIndex = (CHANNELS as readonly string[]).indexOf(channel);
   const [showLog, setShowLog] = useState(false);
   const [actionMember, setActionMember] = useState<{
     userId: string;
@@ -52,8 +55,10 @@ export function ChannelScreen({
           ? "receiving"
           : "idle";
 
-  // Desktop convenience: spacebar is the PTT key.
+  // Desktop convenience: spacebar is the PTT key — only while the radio tab
+  // is actually visible (never a silent transmit from chat/ops).
   useEffect(() => {
+    if (!active) return;
     const down = (e: KeyboardEvent) => {
       if (e.code === "Space" && !e.repeat && e.target === document.body) {
         e.preventDefault();
@@ -72,7 +77,16 @@ export function ChannelScreen({
       window.removeEventListener("keydown", down);
       window.removeEventListener("keyup", up);
     };
-  }, [onPressStart, onPressEnd]);
+  }, [active, onPressStart, onPressEnd]);
+
+  // A press in flight is released when the tab switches away. Keyed on
+  // `active` alone — parent handler identities change every render, and a
+  // cleanup there would cancel live presses mid-grant.
+  const onPressEndRef = useRef(onPressEnd);
+  onPressEndRef.current = onPressEnd;
+  useEffect(() => {
+    if (!active) onPressEndRef.current();
+  }, [active]);
 
   return (
     <div
@@ -92,7 +106,9 @@ export function ChannelScreen({
           <div className="silkscreen" style={{ fontSize: "0.6rem", color: direct ? "var(--rx)" : "var(--ink-dim)" }}>
             {direct
               ? "direct · private"
-              : `channel ${String(channelNumber).padStart(2, "0")}`}
+              : channelIndex >= 0
+                ? `channel ${String(channelIndex + 1).padStart(2, "0")}`
+                : "team channel"}
           </div>
           <div className="display-type font-bold" style={{ fontSize: "1.5rem" }} data-testid="channel-title">
             {direct ? direct.otherName : channel}

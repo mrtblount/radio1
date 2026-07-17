@@ -83,6 +83,11 @@ export function useRadio() {
   const prevFloorRef = useRef<FloorState | null>(null);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const recorderRef = useRef<TransmissionRecorder | null>(null);
+  // Join epoch: bumped by every join() and leave(). Async continuations from a
+  // previous epoch (an in-flight join, a floor grant) must bail when it moved —
+  // otherwise a leave+rejoin (GO DIRECT, ring auto-answer) can enable the NEW
+  // channel's mic off an OLD grant (hot mic, I1/I2) or leak streams/heartbeats.
+  const joinEpochRef = useRef(0);
 
   const flashBusy = useCallback(() => {
     beepBusy();
@@ -133,33 +138,42 @@ export function useRadio() {
 
   const join = useCallback(
     async (name: string, channel: string, accessCode = "") => {
+      const epoch = ++joinEpochRef.current;
       const backend = getBackend();
       backend.setAccessCode(accessCode);
       setState((s) => ({ ...s, joining: true, joinError: null }));
       // Inside the tap's call stack: unlock audio for iOS before any await.
       initAudio();
+      let stream: MediaStream;
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
+        stream = await navigator.mediaDevices.getUserMedia({
           audio: {
             echoCancellation: true,
             noiseSuppression: true,
             autoGainControl: true,
           },
         });
-        const track = stream.getAudioTracks()[0];
-        track.enabled = false; // I2 — never hot on join
-        streamRef.current = stream;
-        trackRef.current = track;
-        recorderRef.current = new TransmissionRecorder(track);
       } catch {
-        setState((s) => ({
-          ...s,
-          joining: false,
-          joinError:
-            "Microphone access is required. Enable it for this site in your browser settings (iPhone: aA menu → Website Settings · Android: lock icon → Permissions), then try again.",
-        }));
+        if (epoch === joinEpochRef.current) {
+          setState((s) => ({
+            ...s,
+            joining: false,
+            joinError:
+              "Microphone access is required. Enable it for this site in your browser settings (iPhone: aA menu → Website Settings · Android: lock icon → Permissions), then try again.",
+          }));
+        }
         return;
       }
+      if (epoch !== joinEpochRef.current) {
+        // Superseded while awaiting the mic — this join owns nothing yet.
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      const track = stream.getAudioTracks()[0];
+      track.enabled = false; // I2 — never hot on join
+      streamRef.current = stream;
+      trackRef.current = track;
+      recorderRef.current = new TransmissionRecorder(track);
 
       const sessionId = mintSessionId();
       sessionIdRef.current = sessionId;
@@ -190,6 +204,19 @@ export function useRadio() {
 
       try {
         const result = await backend.join(sessionId, name, channel, getUserId());
+        if (epoch !== joinEpochRef.current) {
+          // Superseded while registering: undo only what THIS join created.
+          mesh.destroy();
+          stream.getTracks().forEach((t) => t.stop());
+          if (streamRef.current === stream) {
+            streamRef.current = null;
+            trackRef.current = null;
+            recorderRef.current?.cancel();
+            recorderRef.current = null;
+          }
+          void backend.leave(sessionId).catch(() => {});
+          return;
+        }
         if (!result.ok) {
           bail(
             result.reason === "code-invalid"
@@ -199,6 +226,11 @@ export function useRadio() {
           return;
         }
       } catch {
+        if (epoch !== joinEpochRef.current) {
+          mesh.destroy();
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
         bail(
           "Couldn't reach the radio server. Check your connection and try again.",
         );
@@ -260,6 +292,8 @@ export function useRadio() {
 
   const leave = useCallback(() => {
     const backend = getBackend();
+    joinEpochRef.current++; // invalidate in-flight joins and floor grants
+    pressActiveRef.current = false; // a held press must never survive a leave
     if (talkingRef.current) stopTransmit(false);
     joinedRef.current = false;
     for (const unsub of unsubsRef.current.splice(0)) unsub();
@@ -295,23 +329,32 @@ export function useRadio() {
       return;
     }
 
+    // Pin this press to the session/channel/epoch it started on. If the app
+    // leaves or switches channels while the grant is in flight (GO DIRECT,
+    // ring auto-answer), the continuation must release the OLD floor and never
+    // touch the NEW channel's track (I1/I2).
+    const pressEpoch = joinEpochRef.current;
+    const pressSession = sessionIdRef.current;
+    const pressChannel = channelRef.current;
+
     setState((s) => ({ ...s, requesting: true }));
     let granted = false;
     try {
       const res = await getBackend().acquireFloor(
-        sessionIdRef.current,
+        pressSession,
         nameRef.current,
-        channelRef.current,
+        pressChannel,
       );
       granted = res.granted;
     } catch {
       granted = false;
     }
 
-    if (!pressActiveRef.current) {
-      // Finger lifted while the grant was in flight — never transmit (I2).
+    if (!pressActiveRef.current || pressEpoch !== joinEpochRef.current) {
+      // Finger lifted, or the radio left/switched, while the grant was in
+      // flight — never transmit (I2).
       if (granted) {
-        void getBackend().releaseFloor(sessionIdRef.current, channelRef.current);
+        void getBackend().releaseFloor(pressSession, pressChannel);
       }
       setState((s) => ({ ...s, requesting: false }));
       return;
@@ -334,8 +377,8 @@ export function useRadio() {
     renewRef.current = window.setInterval(async () => {
       try {
         const { held } = await getBackend().renewFloor(
-          sessionIdRef.current,
-          channelRef.current,
+          pressSession,
+          pressChannel,
         );
         if (!held) {
           // 60s cap hit or hold lost — force stop.

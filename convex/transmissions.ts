@@ -3,6 +3,7 @@ import {
   internalQuery,
   mutation,
   query,
+  type QueryCtx,
 } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
@@ -34,6 +35,15 @@ export const record = mutation({
   handler: async (ctx, args) => {
     const { accessCode, ...clip } = args;
     assertCode(accessCode);
+    // Same guards as messages.send: real channel, not archived, DM membership.
+    const channel = await ctx.db
+      .query("channels")
+      .withIndex("by_key", (q) => q.eq("key", clip.channelKey))
+      .unique();
+    if (!channel || channel.archived) throw new Error("No such channel");
+    if (channel.kind === "dm" && !channel.dmMembers?.includes(clip.userId)) {
+      throw new Error("Not your conversation");
+    }
     const user = await ctx.db
       .query("users")
       .withIndex("by_userId", (q) => q.eq("userId", clip.userId))
@@ -53,7 +63,9 @@ export const record = mutation({
       kind: "clip",
       body: "(transmission)",
       clipId: id,
-      createdAt: clip.startedAt,
+      // Server time — a client-supplied startedAt in the past would slip
+      // behind read cursors advanced during the upload and never show unread.
+      createdAt: Date.now(),
     });
 
     await ctx.scheduler.runAfter(0, internal.transcribe.run, {
@@ -66,13 +78,33 @@ export const record = mutation({
   },
 });
 
+/** DM clips are audible only to the two participants. */
+async function assertClipAccess(
+  ctx: QueryCtx,
+  channelKey: string,
+  userId: string,
+) {
+  const channel = await ctx.db
+    .query("channels")
+    .withIndex("by_key", (q) => q.eq("key", channelKey))
+    .unique();
+  if (channel?.kind === "dm" && !channel.dmMembers?.includes(userId)) {
+    throw new Error("Not your conversation");
+  }
+}
+
 /** Everything a clip player needs (URL is minted on read). */
 export const clip = query({
-  args: { id: v.id("transmissions"), accessCode: v.optional(v.string()) },
-  handler: async (ctx, { id, accessCode }) => {
+  args: {
+    id: v.id("transmissions"),
+    userId: v.string(),
+    accessCode: v.optional(v.string()),
+  },
+  handler: async (ctx, { id, userId, accessCode }) => {
     assertCode(accessCode);
     const row = await ctx.db.get(id);
     if (!row) return null;
+    await assertClipAccess(ctx, row.channelKey, userId);
     return {
       url: await ctx.storage.getUrl(row.storageId),
       name: row.name,
@@ -88,9 +120,14 @@ export const clip = query({
 
 /** Recent transmissions for a channel (the LOG sheet). */
 export const forChannel = query({
-  args: { channelKey: v.string(), accessCode: v.optional(v.string()) },
-  handler: async (ctx, { channelKey, accessCode }) => {
+  args: {
+    channelKey: v.string(),
+    userId: v.string(),
+    accessCode: v.optional(v.string()),
+  },
+  handler: async (ctx, { channelKey, userId, accessCode }) => {
     assertCode(accessCode);
+    await assertClipAccess(ctx, channelKey, userId);
     const rows = await ctx.db
       .query("transmissions")
       .withIndex("by_channel", (q) => q.eq("channelKey", channelKey))

@@ -3,6 +3,10 @@ import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { formatDuration } from "../../lib/platform/format";
+import { getUserId } from "../../lib/platform/identity";
+
+// One clip plays at a time, app-wide — starting a clip pauses the previous one.
+let currentClipAudio: HTMLAudioElement | null = null;
 
 interface Props {
   clipId: Id<"transmissions">;
@@ -13,6 +17,7 @@ interface Props {
 export function ClipMessage({ clipId, accessCode }: Props) {
   const clip = useQuery(api.transmissions.clip, {
     id: clipId,
+    userId: getUserId(),
     ...(accessCode ? { accessCode } : {}),
   });
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -22,6 +27,7 @@ export function ClipMessage({ clipId, accessCode }: Props) {
   useEffect(
     () => () => {
       audioRef.current?.pause();
+      if (currentClipAudio === audioRef.current) currentClipAudio = null;
       audioRef.current = null;
     },
     [],
@@ -53,6 +59,10 @@ export function ClipMessage({ clipId, accessCode }: Props) {
     if (playing) {
       audioRef.current.pause();
     } else {
+      if (currentClipAudio && currentClipAudio !== audioRef.current) {
+        currentClipAudio.pause();
+      }
+      currentClipAudio = audioRef.current;
       void audioRef.current.play().catch(() => setPlaying(false));
     }
   };

@@ -38,7 +38,13 @@ export function OpsTab({ identity, onOpenChannel }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const working = (thread ?? []).some((m) => m.status === "thinking");
+  // A crashed agent run must not lock the composer forever — placeholders
+  // older than 3 minutes count as dead (the action's own timeout is shorter).
+  const STALE_THINKING_MS = 180_000;
+  const working = (thread ?? []).some(
+    (m) =>
+      m.status === "thinking" && Date.now() - m.createdAt < STALE_THINKING_MS,
+  );
   const scrollerRef = useRef<HTMLDivElement>(null);
   const lastId = thread?.length ? thread[thread.length - 1].id : "";
   const lastStatus = thread?.length ? thread[thread.length - 1].status : "";

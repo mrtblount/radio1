@@ -14,6 +14,8 @@ export interface PendingDm {
 
 interface Props {
   identity: Identity;
+  /** The chat tab is the visible tab (gates read-cursor advancement). */
+  visible?: boolean;
   /** Set by the radio roster's MESSAGE action: open this DM on next show. */
   pendingDm?: PendingDm | null;
   onPendingDmConsumed?: () => void;
@@ -26,6 +28,7 @@ interface Props {
 
 export function ChatTab({
   identity,
+  visible = true,
   pendingDm,
   onPendingDmConsumed,
   pendingChannelKey,
@@ -116,6 +119,7 @@ export function ChatTab({
       <ChatThread
         identity={identity}
         target={dmRow ? { ...thread, online: dmRow.online } : thread}
+        visible={visible}
         onBack={() => setThread(null)}
         onGoDirect={onGoDirect}
       />

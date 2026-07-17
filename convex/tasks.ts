@@ -168,6 +168,11 @@ export const agentComplete = internalMutation({
   args: { label: v.string(), byName: v.string() },
   handler: async (ctx, { label, byName }) => {
     const needle = label.trim().toLowerCase();
+    // includes("") matches everything — never let a blank label check off
+    // the first task.
+    if (needle.length < 2) {
+      return { ok: false as const, reason: "label too short" };
+    }
     const rows = await ctx.db
       .query("tasks")
       .withIndex("by_date", (q) => q.eq("date", todayKey()))

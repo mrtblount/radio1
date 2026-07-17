@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Identity } from "../../hooks/useIdentity";
@@ -20,16 +27,24 @@ export interface ThreadTarget {
 interface Props {
   identity: Identity;
   target: ThreadTarget;
+  /** The chat tab is the visible tab (gates read-cursor advancement). */
+  visible?: boolean;
   onBack: () => void;
   /** Direct PTT hook-in (Phase D wires this). */
   onGoDirect?: (otherUserId: string, otherName: string) => void;
 }
 
-export function ChatThread({ identity, target, onBack, onGoDirect }: Props) {
+export function ChatThread({
+  identity,
+  target,
+  visible = true,
+  onBack,
+  onGoDirect,
+}: Props) {
   const code = identity.code ? { accessCode: identity.code } : {};
   const { results, status, loadMore } = usePaginatedQuery(
     api.messages.page,
-    { channelKey: target.key, ...code },
+    { channelKey: target.key, userId: identity.userId, ...code },
     { initialNumItems: 40 },
   );
   const send = useMutation(api.messages.send);
@@ -42,6 +57,7 @@ export function ChatThread({ identity, target, onBack, onGoDirect }: Props) {
   });
 
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const prevScrollHeightRef = useRef<number | null>(null);
   const [pinnedToBottom, setPinnedToBottom] = useState(true);
   const [adminCode, setAdminCode] = useState(
     () => sessionStorage.getItem(ADMIN_CODE_KEY) ?? "",
@@ -62,16 +78,25 @@ export function ChatThread({ identity, target, onBack, onGoDirect }: Props) {
     ? messages[messages.length - 1].createdAt
     : 0;
 
-  // Keep the read cursor fresh while the thread is open at the bottom.
+  // Keep the read cursor fresh — but ONLY while the user can actually see the
+  // thread: chat tab shown, page visible, scrolled to the bottom. A hidden
+  // thread must never silently swallow unread state.
+  const [visTick, setVisTick] = useState(0);
   useEffect(() => {
-    if (!pinnedToBottom) return;
+    const onVis = () => setVisTick((t) => t + 1);
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
+  useEffect(() => {
+    if (!visible || !pinnedToBottom) return;
+    if (document.visibilityState !== "visible") return;
     void markRead({
       userId: identity.userId,
       channelKey: target.key,
       ...code,
     }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [latestAt, pinnedToBottom, target.key]);
+  }, [latestAt, pinnedToBottom, target.key, visible, visTick]);
 
   // Autoscroll on new messages while pinned.
   useEffect(() => {
@@ -79,6 +104,17 @@ export function ChatThread({ identity, target, onBack, onGoDirect }: Props) {
       scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight;
     }
   }, [latestAt, pinnedToBottom]);
+
+  // Load-earlier scroll compensation: keep the previously-visible message in
+  // place after older messages prepend above it.
+  useLayoutEffect(() => {
+    const el = scrollerRef.current;
+    const prev = prevScrollHeightRef.current;
+    if (el && prev !== null && el.scrollHeight > prev) {
+      el.scrollTop += el.scrollHeight - prev;
+      prevScrollHeightRef.current = null;
+    }
+  }, [messages.length]);
 
   // Initial scroll to bottom.
   useEffect(() => {
@@ -101,6 +137,16 @@ export function ChatThread({ identity, target, onBack, onGoDirect }: Props) {
   }, [verify, adminEntry]);
 
   const canPost = !target.postRestricted || !!adminCode;
+
+  // Typing expiry is time-based, not data-based — tick while any beacon is
+  // live so "X typing…" actually clears at the 4s TTL.
+  const [, setTypingTick] = useState(0);
+  const hasTypers = (typers ?? []).length > 0;
+  useEffect(() => {
+    if (!hasTypers) return;
+    const interval = window.setInterval(() => setTypingTick((t) => t + 1), 1000);
+    return () => clearInterval(interval);
+  }, [hasTypers]);
   const activeTypers = (typers ?? []).filter((t) => t.until > Date.now());
 
   let lastDay = "";
@@ -177,7 +223,13 @@ export function ChatThread({ identity, target, onBack, onGoDirect }: Props) {
         {status === "CanLoadMore" && (
           <button
             type="button"
-            onClick={() => loadMore(40)}
+            onClick={() => {
+              // Prepending shifts content down — compensate so the reader
+              // keeps their place (iOS Safari has no scroll anchoring here).
+              const el = scrollerRef.current;
+              prevScrollHeightRef.current = el ? el.scrollHeight : null;
+              loadMore(40);
+            }}
             className="silkscreen mb-3 w-full rounded-md py-2"
             style={{
               fontSize: "0.6rem",

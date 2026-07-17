@@ -2,6 +2,7 @@ import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { ClipMessage } from "../chat/ClipMessage";
 import { formatClock } from "../../lib/platform/format";
+import { getUserId } from "../../lib/platform/identity";
 
 interface Props {
   open: boolean;
@@ -15,7 +16,11 @@ export function TransmissionLog({ open, channel, accessCode, onClose }: Props) {
   const clips = useQuery(
     api.transmissions.forChannel,
     open
-      ? { channelKey: channel, ...(accessCode ? { accessCode } : {}) }
+      ? {
+          channelKey: channel,
+          userId: getUserId(),
+          ...(accessCode ? { accessCode } : {}),
+        }
       : "skip",
   );
 

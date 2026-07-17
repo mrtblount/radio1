@@ -54,6 +54,13 @@ export default function App() {
     }
   }, [identified, state.screen, state.name, identify]);
 
+  // Backfill: upgraded v1 devices are already "identified" (stored name) but
+  // have no server users row — upsert once on load (idempotent).
+  useEffect(() => {
+    if (identified) void identify(identity.name, identity.code);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Make sure the seeded channels exist once we're in.
   useEffect(() => {
     if (!identified) return;
@@ -98,11 +105,13 @@ export default function App() {
           otherUserId,
           ...(identity.code ? { accessCode: identity.code } : {}),
         });
+        // Chained directs keep the original team channel as the way back.
         const returnChannel =
           state.screen === "channel" && !state.channel.startsWith("dm_")
             ? state.channel
-            : null;
-        if (state.screen === "channel") leave();
+            : (direct?.returnChannel ?? null);
+        // Unconditional: also invalidates any in-flight join (epoch bump).
+        leave();
         setDirect({ key, otherName, returnChannel });
         setTab("radio");
         void join(identity.name, key, identity.code);
@@ -110,7 +119,7 @@ export default function App() {
         console.warn("[direct] open failed", err);
       }
     },
-    [openDirect, identity, state.screen, state.channel, leave, join],
+    [openDirect, identity, state.screen, state.channel, direct, leave, join],
   );
 
   // ── Direct PTT: callee side — auto-switch while on the radio ─────────────
@@ -119,14 +128,17 @@ export default function App() {
     if (!rings || rings.length === 0) return;
     const ring = rings[0];
     if (answeredRef.current.has(ring.id)) return;
+    // Only a client that actually answers consumes the ring — a chat-only tab
+    // must not eat a call meant for the phone that's on the air. Unanswered
+    // rings expire server-side.
+    if (state.screen !== "channel") return; // off the radio → clip + push cover it
+    if (state.channel === ring.channelKey) return; // already on the call
+
     answeredRef.current.add(ring.id);
     void consumeCall({
       id: ring.id,
       ...(identity.code ? { accessCode: identity.code } : {}),
     }).catch(() => {});
-
-    if (state.screen !== "channel") return; // off the radio → clip + push cover it
-    if (state.channel === ring.channelKey) return; // already on the call
 
     const returnChannel = state.channel.startsWith("dm_")
       ? (direct?.returnChannel ?? null)
@@ -137,7 +149,7 @@ export default function App() {
     setTab("radio");
     void join(identity.name, ring.channelKey, identity.code);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rings]);
+  }, [rings, state.screen, state.channel]);
 
   const returnFromDirect = useCallback(() => {
     const back = direct?.returnChannel ?? null;
@@ -180,6 +192,7 @@ export default function App() {
             <ChannelScreen
               state={state}
               sessionId={state.sessionId}
+              active={activeTab === "radio"}
               direct={directInfo}
               onPressStart={() => {
                 void pressPTT();
@@ -211,6 +224,7 @@ export default function App() {
         <div className={activeTab === "chat" ? "h-full" : "hidden"}>
           <ChatTab
             identity={identity}
+            visible={activeTab === "chat"}
             pendingDm={pendingDm}
             onPendingDmConsumed={() => setPendingDm(null)}
             pendingChannelKey={pendingChannelKey}

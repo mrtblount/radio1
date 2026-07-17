@@ -76,12 +76,14 @@ export class TransmissionRecorder {
       return Promise.resolve(null);
     }
     const startedAt = this.startedAt;
+    // Duration = the floor hold, measured now — not at onstop, which would add
+    // MediaRecorder finalization latency and defeat the accidental-tap filter.
+    const durationMs = Date.now() - startedAt;
     const mimeType = this.mime!;
     return new Promise((resolve) => {
       const timeout = window.setTimeout(() => resolve(null), 5_000);
       recorder.onstop = () => {
         clearTimeout(timeout);
-        const durationMs = Date.now() - startedAt;
         const blob = new Blob(this.chunks, { type: mimeType });
         this.chunks = [];
         if (blob.size === 0) return resolve(null);

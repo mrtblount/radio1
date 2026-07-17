@@ -191,6 +191,7 @@ export const run = internalAction({
           case "get_transmissions":
             return await ctx.runQuery(internal.ai.ctxTransmissions, {
               hours: typeof input.hours === "number" ? input.hours : 24,
+              userId,
               channel:
                 typeof input.channel === "string" ? input.channel : undefined,
             });

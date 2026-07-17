@@ -11,11 +11,20 @@ const TYPING_MS = 4_000;
 export const page = query({
   args: {
     channelKey: v.string(),
+    userId: v.string(),
     paginationOpts: paginationOptsValidator,
     accessCode: v.optional(v.string()),
   },
-  handler: async (ctx, { channelKey, paginationOpts, accessCode }) => {
+  handler: async (ctx, { channelKey, userId, paginationOpts, accessCode }) => {
     assertCode(accessCode);
+    // DMs are readable only by their two participants.
+    const channel = await ctx.db
+      .query("channels")
+      .withIndex("by_key", (q) => q.eq("key", channelKey))
+      .unique();
+    if (channel?.kind === "dm" && !channel.dmMembers?.includes(userId)) {
+      throw new Error("Not your conversation");
+    }
     return await ctx.db
       .query("messages")
       .withIndex("by_channel", (q) => q.eq("channelKey", channelKey))
