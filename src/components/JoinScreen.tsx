@@ -7,13 +7,17 @@ interface Props {
   joining: boolean;
   joinError: string | null;
   onJoin: (name: string, channel: string, accessCode: string) => void;
+  /** Optional: pass the gate without going on the radio (text chat only). */
+  onChatOnly?: (name: string, accessCode: string) => Promise<string | null>;
 }
 
-export function JoinScreen({ joining, joinError, onJoin }: Props) {
+export function JoinScreen({ joining, joinError, onJoin, onChatOnly }: Props) {
   const [name, setName] = useState(loadDisplayName);
   const [channel, setChannel] = useState<string>(CHANNELS[0]);
   const [code, setCode] = useState(loadAccessCode);
   const [codeRequired, setCodeRequired] = useState(false);
+  const [chatOnlyBusy, setChatOnlyBusy] = useState(false);
+  const [chatOnlyError, setChatOnlyError] = useState<string | null>(null);
   const ready =
     name.trim().length >= 2 && (!codeRequired || code.trim().length > 0);
 
@@ -127,13 +131,13 @@ export function JoinScreen({ joining, joinError, onJoin }: Props) {
         </>
       )}
 
-      {joinError && (
+      {(joinError || chatOnlyError) && (
         <p
           data-testid="join-error"
           className="mb-4 rounded-md px-4 py-3 text-sm"
           style={{ background: "rgba(255,81,71,0.1)", border: "1px solid var(--alert)", color: "var(--ink)" }}
         >
-          {joinError}
+          {joinError ?? chatOnlyError}
         </p>
       )}
 
@@ -142,7 +146,7 @@ export function JoinScreen({ joining, joinError, onJoin }: Props) {
         data-testid="join-button"
         disabled={!ready || joining}
         onClick={() => onJoin(name.trim(), channel, code.trim())}
-        className="display-type mb-10 w-full rounded-md py-4 font-bold"
+        className="display-type mb-4 w-full rounded-md py-4 font-bold"
         style={{
           fontSize: "1.3rem",
           letterSpacing: "0.08em",
@@ -153,6 +157,31 @@ export function JoinScreen({ joining, joinError, onJoin }: Props) {
       >
         {joining ? "KEYING IN…" : "GO ON DUTY"}
       </button>
+
+      {onChatOnly && (
+        <button
+          type="button"
+          data-testid="chat-only-link"
+          disabled={!ready || joining || chatOnlyBusy}
+          onClick={() => {
+            setChatOnlyBusy(true);
+            setChatOnlyError(null);
+            void onChatOnly(name.trim(), code.trim()).then((err) => {
+              setChatOnlyBusy(false);
+              if (err) setChatOnlyError(err);
+            });
+          }}
+          className="silkscreen mb-6 w-full py-2"
+          style={{
+            fontSize: "0.62rem",
+            color: ready ? "var(--ink-dim)" : "var(--led-off)",
+            background: "none",
+            border: "none",
+          }}
+        >
+          {chatOnlyBusy ? "opening…" : "open text chat without radio →"}
+        </button>
+      )}
 
       <p className="mt-auto pb-6 text-xs" style={{ color: "var(--ink-dim)" }}>
         Your phone will ask for microphone access — that's the radio.

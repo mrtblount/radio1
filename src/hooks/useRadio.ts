@@ -13,6 +13,12 @@ import {
   saveAccessCode,
   saveDisplayName,
 } from "../lib/radio/session";
+import { getUserId } from "../lib/platform/identity";
+import { TransmissionRecorder } from "../lib/radio/recorder";
+import { uploadTransmission } from "../lib/platform/clips";
+
+/** Clips shorter than this are accidental taps — not history. */
+const MIN_CLIP_MS = 400;
 import type {
   FloorState,
   Member,
@@ -76,6 +82,7 @@ export function useRadio() {
   const joinedRef = useRef(false);
   const prevFloorRef = useRef<FloorState | null>(null);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+  const recorderRef = useRef<TransmissionRecorder | null>(null);
 
   const flashBusy = useCallback(() => {
     beepBusy();
@@ -100,6 +107,17 @@ export function useRadio() {
     if (withBeep) beepRelease();
     if (joinedRef.current) {
       void getBackend().releaseFloor(sessionIdRef.current, channelRef.current);
+    }
+    // I3′ — after the mic is cut, finish the clip and upload in the background.
+    const recorder = recorderRef.current;
+    if (recorder) {
+      const clipChannel = channelRef.current;
+      const clipSession = sessionIdRef.current;
+      void recorder.stop().then((finished) => {
+        if (finished && finished.durationMs >= MIN_CLIP_MS) {
+          void uploadTransmission(finished, clipChannel, clipSession);
+        }
+      });
     }
   }, []);
 
@@ -132,6 +150,7 @@ export function useRadio() {
         track.enabled = false; // I2 — never hot on join
         streamRef.current = stream;
         trackRef.current = track;
+        recorderRef.current = new TransmissionRecorder(track);
       } catch {
         setState((s) => ({
           ...s,
@@ -161,6 +180,8 @@ export function useRadio() {
 
       const bail = (joinError: string) => {
         mesh.destroy();
+        recorderRef.current?.cancel();
+        recorderRef.current = null;
         streamRef.current?.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
         trackRef.current = null;
@@ -168,7 +189,7 @@ export function useRadio() {
       };
 
       try {
-        const result = await backend.join(sessionId, name, channel);
+        const result = await backend.join(sessionId, name, channel, getUserId());
         if (!result.ok) {
           bail(
             result.reason === "code-invalid"
@@ -221,7 +242,7 @@ export function useRadio() {
 
       heartbeatRef.current = window.setInterval(() => {
         // join() is an upsert — self-heals if a sweep removed us while backgrounded.
-        void backend.join(sessionId, name, channel).catch(() => {});
+        void backend.join(sessionId, name, channel, getUserId()).catch(() => {});
       }, HEARTBEAT_MS);
 
       void requestWakeLock();
@@ -246,6 +267,8 @@ export function useRadio() {
     heartbeatRef.current = null;
     meshRef.current?.destroy();
     meshRef.current = null;
+    recorderRef.current?.cancel();
+    recorderRef.current = null;
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     trackRef.current = null;
@@ -303,6 +326,7 @@ export function useRadio() {
 
     if (trackRef.current) trackRef.current.enabled = true;
     talkingRef.current = true;
+    recorderRef.current?.start(); // I3′ — capture exactly the floor hold
     beepGrant();
     navigator.vibrate?.(30);
     setState((s) => ({ ...s, talking: true, requesting: false }));
@@ -341,7 +365,12 @@ export function useRadio() {
     const onVisible = () => {
       if (document.visibilityState !== "visible" || !joinedRef.current) return;
       void getBackend()
-        .join(sessionIdRef.current, nameRef.current, channelRef.current)
+        .join(
+          sessionIdRef.current,
+          nameRef.current,
+          channelRef.current,
+          getUserId(),
+        )
         .catch(() => {});
       meshRef.current?.reconcile();
       void requestWakeLock();

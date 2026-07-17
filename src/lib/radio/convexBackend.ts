@@ -1,6 +1,7 @@
-import { ConvexClient } from "convex/browser";
+import type { FunctionReference } from "convex/server";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
+import { convexClient } from "../convexClient";
 import type {
   FloorState,
   JoinResult,
@@ -10,14 +11,13 @@ import type {
   SignalKind,
 } from "./types";
 
-/** The only file in src/ that knows Convex exists. Swap point for Supabase. */
+/**
+ * Convex implementation of RadioBackend. Wraps the app-wide shared
+ * ConvexReactClient (one websocket for radio + chat + ops) — the radio core
+ * itself still only knows this interface, so the backend stays swappable.
+ */
 export class ConvexRadioBackend implements RadioBackend {
-  private client: ConvexClient;
   private accessCode: string | undefined;
-
-  constructor(url: string) {
-    this.client = new ConvexClient(url);
-  }
 
   setAccessCode(code: string) {
     this.accessCode = code || undefined;
@@ -28,8 +28,31 @@ export class ConvexRadioBackend implements RadioBackend {
     return this.accessCode ? { accessCode: this.accessCode } : {};
   }
 
+  /** Reactive subscription adapter: deliver current value + every update. */
+  private subscribe<T>(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    query: FunctionReference<"query", "public", any, T>,
+    args: Record<string, unknown>,
+    cb: (value: T) => void,
+  ): () => void {
+    const watch = convexClient.watchQuery(query, args);
+    const push = () => {
+      // localQueryResult throws if the query errored; treat as no-update
+      // (Convex retries internally and a later update will land).
+      try {
+        const value = watch.localQueryResult();
+        if (value !== undefined) cb(value as T);
+      } catch {
+        /* transient query error — wait for next update */
+      }
+    };
+    const unsubscribe = watch.onUpdate(push);
+    push();
+    return unsubscribe;
+  }
+
   async codeRequired() {
-    const { codeRequired } = await this.client.query(api.access.config, {});
+    const { codeRequired } = await convexClient.query(api.access.config, {});
     return codeRequired;
   }
 
@@ -37,21 +60,23 @@ export class ConvexRadioBackend implements RadioBackend {
     sessionId: string,
     name: string,
     channel: string,
+    userId?: string,
   ): Promise<JoinResult> {
-    return await this.client.mutation(api.presence.join, {
+    return await convexClient.mutation(api.presence.join, {
       sessionId,
       name,
       channel,
+      userId,
       ...this.code,
     });
   }
 
   async leave(sessionId: string) {
-    await this.client.mutation(api.presence.leave, { sessionId });
+    await convexClient.mutation(api.presence.leave, { sessionId });
   }
 
   async acquireFloor(sessionId: string, name: string, channel: string) {
-    return await this.client.mutation(api.floor.acquire, {
+    return await convexClient.mutation(api.floor.acquire, {
       sessionId,
       name,
       channel,
@@ -60,7 +85,7 @@ export class ConvexRadioBackend implements RadioBackend {
   }
 
   async renewFloor(sessionId: string, channel: string) {
-    return await this.client.mutation(api.floor.renew, {
+    return await convexClient.mutation(api.floor.renew, {
       sessionId,
       channel,
       ...this.code,
@@ -68,7 +93,7 @@ export class ConvexRadioBackend implements RadioBackend {
   }
 
   async releaseFloor(sessionId: string, channel: string) {
-    await this.client.mutation(api.floor.release, {
+    await convexClient.mutation(api.floor.release, {
       sessionId,
       channel,
       ...this.code,
@@ -82,7 +107,7 @@ export class ConvexRadioBackend implements RadioBackend {
     kind: SignalKind,
     payload: string,
   ) {
-    await this.client.mutation(api.signaling.send, {
+    await convexClient.mutation(api.signaling.send, {
       fromSession,
       toSession,
       channel,
@@ -93,30 +118,22 @@ export class ConvexRadioBackend implements RadioBackend {
   }
 
   async consumeSignals(ids: string[]) {
-    await this.client.mutation(api.signaling.consume, {
+    await convexClient.mutation(api.signaling.consume, {
       ids: ids as Id<"signals">[],
       ...this.code,
     });
   }
 
   subscribeRoster(channel: string, cb: (members: Member[]) => void) {
-    return this.client.onUpdate(
-      api.presence.roster,
-      { channel, ...this.code },
-      cb,
-    );
+    return this.subscribe(api.presence.roster, { channel, ...this.code }, cb);
   }
 
   subscribeFloor(channel: string, cb: (floor: FloorState | null) => void) {
-    return this.client.onUpdate(
-      api.floor.current,
-      { channel, ...this.code },
-      cb,
-    );
+    return this.subscribe(api.floor.current, { channel, ...this.code }, cb);
   }
 
   subscribeInbox(sessionId: string, cb: (signals: Signal[]) => void) {
-    return this.client.onUpdate(
+    return this.subscribe(
       api.signaling.inbox,
       { toSession: sessionId, ...this.code },
       (rows) => cb(rows as Signal[]),
@@ -127,10 +144,6 @@ export class ConvexRadioBackend implements RadioBackend {
 let singleton: ConvexRadioBackend | null = null;
 
 export function getBackend(): ConvexRadioBackend {
-  if (!singleton) {
-    const url = import.meta.env.VITE_CONVEX_URL as string | undefined;
-    if (!url) throw new Error("VITE_CONVEX_URL is not set");
-    singleton = new ConvexRadioBackend(url);
-  }
+  if (!singleton) singleton = new ConvexRadioBackend();
   return singleton;
 }

@@ -10,9 +10,10 @@ export const join = mutation({
     sessionId: v.string(),
     name: v.string(),
     channel: v.string(),
+    userId: v.optional(v.string()),
     accessCode: v.optional(v.string()),
   },
-  handler: async (ctx, { sessionId, name, channel, accessCode }) => {
+  handler: async (ctx, { sessionId, name, channel, userId, accessCode }) => {
     const gate = checkCode(accessCode);
     if (gate !== "ok") {
       return { ok: false as const, reason: `code-${gate}` as const };
@@ -23,7 +24,7 @@ export const join = mutation({
       .withIndex("by_session", (q) => q.eq("sessionId", sessionId))
       .unique();
     if (existing) {
-      await ctx.db.patch(existing._id, { name, channel, lastSeen: now });
+      await ctx.db.patch(existing._id, { name, channel, lastSeen: now, userId });
     } else {
       await ctx.db.insert("members", {
         sessionId,
@@ -31,6 +32,7 @@ export const join = mutation({
         channel,
         joinedAt: now,
         lastSeen: now,
+        userId,
       });
     }
     return { ok: true as const };
@@ -91,6 +93,7 @@ export const roster = query({
         sessionId: m.sessionId,
         name: m.name,
         joinedAt: m.joinedAt,
+        userId: m.userId,
       }));
   },
 });

@@ -1,11 +1,161 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useMutation, useQuery } from "convex/react";
+import { api } from "../convex/_generated/api";
 import { useRadio } from "./hooks/useRadio";
+import { useIdentity } from "./hooks/useIdentity";
+import { useAppHeartbeat } from "./hooks/useAppHeartbeat";
+import { loadAccessCode } from "./lib/platform/identity";
+import { beepIncoming } from "./lib/radio/beeps";
 import { JoinScreen } from "./components/JoinScreen";
-import { ChannelScreen } from "./components/ChannelScreen";
+import { ChannelScreen, type DirectInfo } from "./components/ChannelScreen";
+import { ChannelSelect } from "./components/ChannelSelect";
+import { TabBar, type ShellTab } from "./components/shell/TabBar";
+import { SettingsSheet } from "./components/shell/SettingsSheet";
+import { ChatTab, type PendingDm } from "./components/chat/ChatTab";
+import { OpsTab } from "./components/ops/OpsTab";
+import { setAppBadge } from "./lib/platform/notifications";
+
+interface DirectState {
+  key: string;
+  otherName: string;
+  returnChannel: string | null;
+}
 
 export default function App() {
   const { state, join, leave, pressPTT, releasePTT } = useRadio();
+  const { identified, identity, identify } = useIdentity();
+  const [tab, setTab] = useState<ShellTab>("radio");
+  const [direct, setDirect] = useState<DirectState | null>(null);
+  const [pendingDm, setPendingDm] = useState<PendingDm | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [pendingChannelKey, setPendingChannelKey] = useState<string | null>(
+    null,
+  );
 
-  if (state.screen === "join") {
+  const codeArg = identity.code ? { accessCode: identity.code } : {};
+  const config = useQuery(api.settings.teamConfig);
+  const ensureSeeded = useMutation(api.channels.ensureSeeded);
+  const openDirect = useMutation(api.directCalls.openDirect);
+  const consumeCall = useMutation(api.directCalls.consume);
+  useAppHeartbeat(identified ? identity.userId : null);
+  const unread = useQuery(
+    api.messages.unreadSummary,
+    identified ? { userId: identity.userId, ...codeArg } : "skip",
+  );
+  const rings = useQuery(
+    api.directCalls.incoming,
+    identified ? { toUserId: identity.userId, ...codeArg } : "skip",
+  );
+
+  // A fresh device's first successful radio join doubles as the identity gate.
+  useEffect(() => {
+    if (!identified && state.screen === "channel") {
+      void identify(state.name, loadAccessCode());
+    }
+  }, [identified, state.screen, state.name, identify]);
+
+  // Make sure the seeded channels exist once we're in.
+  useEffect(() => {
+    if (!identified) return;
+    void ensureSeeded({
+      ...(identity.code ? { accessCode: identity.code } : {}),
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [identified]);
+
+  // Notification deep links: /#chat/<channelKey> — from a cold open (hash)
+  // or a warm one (message from the service worker's notificationclick).
+  useEffect(() => {
+    const openFromUrl = (url: string) => {
+      const match = /#chat\/(.+)$/.exec(url);
+      if (match) {
+        setPendingChannelKey(decodeURIComponent(match[1]));
+        setTab("chat");
+      }
+    };
+    openFromUrl(window.location.hash);
+    const onMessage = (e: MessageEvent) => {
+      if (e.data?.kind === "open" && typeof e.data.url === "string") {
+        openFromUrl(e.data.url);
+      }
+    };
+    navigator.serviceWorker?.addEventListener("message", onMessage);
+    return () =>
+      navigator.serviceWorker?.removeEventListener("message", onMessage);
+  }, []);
+
+  // Keep the app-icon badge honest.
+  useEffect(() => {
+    setAppBadge(unread?.total ?? 0);
+  }, [unread?.total]);
+
+  // ── Direct PTT (PLAN D8): caller side ────────────────────────────────────
+  const goDirect = useCallback(
+    async (otherUserId: string, otherName: string) => {
+      try {
+        const { key } = await openDirect({
+          userId: identity.userId,
+          otherUserId,
+          ...(identity.code ? { accessCode: identity.code } : {}),
+        });
+        const returnChannel =
+          state.screen === "channel" && !state.channel.startsWith("dm_")
+            ? state.channel
+            : null;
+        if (state.screen === "channel") leave();
+        setDirect({ key, otherName, returnChannel });
+        setTab("radio");
+        void join(identity.name, key, identity.code);
+      } catch (err) {
+        console.warn("[direct] open failed", err);
+      }
+    },
+    [openDirect, identity, state.screen, state.channel, leave, join],
+  );
+
+  // ── Direct PTT: callee side — auto-switch while on the radio ─────────────
+  const answeredRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!rings || rings.length === 0) return;
+    const ring = rings[0];
+    if (answeredRef.current.has(ring.id)) return;
+    answeredRef.current.add(ring.id);
+    void consumeCall({
+      id: ring.id,
+      ...(identity.code ? { accessCode: identity.code } : {}),
+    }).catch(() => {});
+
+    if (state.screen !== "channel") return; // off the radio → clip + push cover it
+    if (state.channel === ring.channelKey) return; // already on the call
+
+    const returnChannel = state.channel.startsWith("dm_")
+      ? (direct?.returnChannel ?? null)
+      : state.channel;
+    leave();
+    beepIncoming();
+    setDirect({ key: ring.channelKey, otherName: ring.fromName, returnChannel });
+    setTab("radio");
+    void join(identity.name, ring.channelKey, identity.code);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rings]);
+
+  const returnFromDirect = useCallback(() => {
+    const back = direct?.returnChannel ?? null;
+    setDirect(null);
+    leave();
+    if (back) void join(identity.name, back, identity.code);
+  }, [direct, leave, join, identity]);
+
+  // Direct framing only applies while actually on that dm channel.
+  const directInfo: DirectInfo | null =
+    direct && state.screen === "channel" && state.channel === direct.key
+      ? { otherName: direct.otherName, onReturn: returnFromDirect }
+      : null;
+
+  // ── Identity gate (first run): the v1 join screen, verbatim ──────────────
+  // A successful radio join shows the shell immediately; the identity upsert
+  // catches up asynchronously (name/code are already persisted by join()).
+  if (!identified && state.screen !== "channel") {
     return (
       <JoinScreen
         joining={state.joining}
@@ -13,19 +163,88 @@ export default function App() {
         onJoin={(name, channel, accessCode) => {
           void join(name, channel, accessCode);
         }}
+        onChatOnly={identify}
       />
     );
   }
 
+  const showOps = config?.aiEnabled ?? false;
+  const activeTab: ShellTab = tab === "ops" && !showOps ? "radio" : tab;
+
   return (
-    <ChannelScreen
-      state={state}
-      sessionId={state.sessionId}
-      onPressStart={() => {
-        void pressPTT();
-      }}
-      onPressEnd={releasePTT}
-      onLeave={leave}
-    />
+    <div className="mx-auto flex h-full max-w-md flex-col">
+      <div className="min-h-0 flex-1">
+        {/* Tabs stay mounted — switching never tears down the radio (I6). */}
+        <div className={activeTab === "radio" ? "h-full" : "hidden"}>
+          {state.screen === "channel" ? (
+            <ChannelScreen
+              state={state}
+              sessionId={state.sessionId}
+              direct={directInfo}
+              onPressStart={() => {
+                void pressPTT();
+              }}
+              onPressEnd={releasePTT}
+              onLeave={() => {
+                setDirect(null);
+                leave();
+              }}
+              onMessageMember={(userId, name) => {
+                setPendingDm({ userId, name });
+                setTab("chat");
+              }}
+              onGoDirectMember={(userId, name) => {
+                void goDirect(userId, name);
+              }}
+            />
+          ) : (
+            <ChannelSelect
+              accessCode={identity.code}
+              joining={state.joining}
+              joinError={state.joinError}
+              onPick={(channelKey) => {
+                void join(identity.name, channelKey, identity.code);
+              }}
+            />
+          )}
+        </div>
+        <div className={activeTab === "chat" ? "h-full" : "hidden"}>
+          <ChatTab
+            identity={identity}
+            pendingDm={pendingDm}
+            onPendingDmConsumed={() => setPendingDm(null)}
+            pendingChannelKey={pendingChannelKey}
+            onPendingChannelConsumed={() => setPendingChannelKey(null)}
+            onGoDirect={(otherUserId, otherName) => {
+              void goDirect(otherUserId, otherName);
+            }}
+          />
+        </div>
+        {showOps && (
+          <div className={activeTab === "ops" ? "h-full" : "hidden"}>
+            <OpsTab
+              identity={identity}
+              onOpenChannel={(channelKey) => {
+                setPendingChannelKey(channelKey);
+                setTab("chat");
+              }}
+            />
+          </div>
+        )}
+      </div>
+      <TabBar
+        tab={activeTab}
+        onTab={setTab}
+        showOps={showOps}
+        chatUnread={unread?.total ?? 0}
+        radioActive={state.screen === "channel"}
+        onSettings={() => setShowSettings(true)}
+      />
+      <SettingsSheet
+        open={showSettings}
+        identity={identity}
+        onClose={() => setShowSettings(false)}
+      />
+    </div>
   );
 }

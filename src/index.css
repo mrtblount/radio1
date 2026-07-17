@@ -182,9 +182,26 @@ body::before {
   animation: rx-blink 0.9s ease-in-out infinite;
 }
 
+/* Gentle live-link pulse (the ops thread's blinking-green motif). */
+@keyframes led-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.25);
+  }
+}
+.led-pulse {
+  animation: led-pulse 2s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ptt-key[data-state="talking"],
-  .rx-blink {
+  .rx-blink,
+  .led-pulse {
     animation: none;
   }
 }

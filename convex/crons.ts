@@ -17,4 +17,12 @@ crons.interval(
   {},
 );
 
+// Seed today's checklist from the template (~5am ET; lazy ensureToday backstops).
+crons.daily(
+  "seed daily checklist",
+  { hourUTC: 9, minuteUTC: 30 },
+  internal.tasks.seedToday,
+  {},
+);
+
 export default crons;
