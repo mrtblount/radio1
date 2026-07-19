@@ -19,8 +19,9 @@ INTEGRATION.md). Owner-specific integration notes live in `private/`
 - Deploy: `npx convex deploy -y && vercel --prod --yes`.
 - Env vars (per deployment, via `npx convex env set`): `ACCESS_CODE` (team
   gate), `ADMIN_CODE` (admin panel), `GROQ_API_KEY` (transcripts),
-  `ANTHROPIC_API_KEY` (ops agent), `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/
-  `VAPID_SUBJECT` (push). Client env: `VITE_CONVEX_URL`,
+  `STT_LANGUAGE` (optional; ISO-639-1 transcription language pin, defaults
+  `en`), `ANTHROPIC_API_KEY` (ops agent), `VAPID_PUBLIC_KEY`/
+  `VAPID_PRIVATE_KEY`/`VAPID_SUBJECT` (push). Client env: `VITE_CONVEX_URL`,
   `VITE_VAPID_PUBLIC_KEY`. None of these ever go in the repo.
 
 ## Architecture invariants (from specs/SPEC.md — do not break)
