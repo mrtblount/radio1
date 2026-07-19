@@ -1,8 +1,8 @@
 # SPEC — Radio One Platform (PTT Radio · Team Chat · AI Ops)
 
-> **Status**: v2 — Approved (autonomous session 2026-07-17. Tony directed end-to-end
-> autonomous execution of the fusion build and is away; gates self-approved, every
-> owner-facing decision recorded here and in PLAN.md §Decisions.)
+> **Status**: v2.1 — Approved (v2 approved 2026-07-17; §9 field-feedback amendment
+> added 2026-07-18 from Tony's first field trial, autonomous session, gates
+> self-approved per his direction. Decisions recorded here and in PLAN.md §Decisions.)
 > v1 (2026-07-10, PTT-only MVP) is superseded by this document; v1 invariants carry
 > forward except where explicitly amended (see I3′).
 
@@ -184,3 +184,98 @@ misses a transmission on purpose, gets the push, taps it, plays the clip and rea
 the transcript; sends a DM and goes direct-PTT from it; asks OPS "who's been on
 Security today and what did they say?" and gets a clean blocks answer — all without
 anything feeling clunkier than the v1 radio.
+
+## 9. v2.1 — Field-feedback amendment (2026-07-18)
+
+From Tony's first field trial. Eight changes, one explicit skip. All v2
+invariants hold unchanged; two are given sharper interpretations (see 9.3).
+
+### 9.1 Problems observed
+
+- **P1 — pocket death**: an iOS PWA can't capture or reliably receive with the
+  screen locked. The wake lock exists but is invisible and uncontrollable; the
+  real fix for deployments is native (recorded in NATIVE.md: PWA for demos,
+  Capacitor + Apple PushToTalk for real deployments).
+- **P2 — "Það er það."**: the STT hallucinated Icelandic on a ~1s clip — the
+  classic short-burst Whisper failure. No language pin, no duration gate, no
+  confidence signal.
+- **P3 — OPS said "2 team channels" while the UI lists 5+**: the agent's only
+  channel awareness silently drops quiet channels (convex/ai.ts:232 in v2);
+  the UI lists every non-archived channel. Mismatches of this class kill trust
+  in an ops agent.
+- **P4 — "44 Alphas, all offline"**: e2e runs mint a permanent user row per
+  browser context (the core suite reuses the literal names Alpha/Bravo), user
+  rows are never cleaned, and nothing enforces call-sign uniqueness. Live dev
+  data 2026-07-18: 45 users, 34 e2e debris.
+- **P5 — transcripts are stored but not *memory***: "what did Alpha say about
+  the west lot" is not answerable by OPS.
+
+### 9.2 New capabilities (re-ranked Slack pulls + fixes)
+
+1. **Unread + @mention badges with per-channel alert levels** (first).
+   @mentions parse server-side, render highlighted, badge amber (mentions are
+   "requires you", distinct from green unread), and bypass push suppression.
+   Per user per channel: alert level `all | mentions | mute` set from the
+   thread header. Mute silences push and the green badge; amber mention badges
+   always surface.
+2. **One-tap ACK on transmissions** — "COPY" is the radio-native reaction
+   (deliberately not emoji). Any recipient taps COPY on a clip; the sender sees
+   who copied, live. Idempotent, toggleable (mistap-safe).
+3. **Transmission → checklist item** — a clip can become a task (label from
+   its transcript, provenance kept), so the OPS checklist card starts doing
+   work. Never from DM clips (private transcript must not leak to the shared
+   checklist).
+4. **STT hardening** — pin the transcription language (deployment-configurable,
+   default `en`), skip transcription for clips under 1s (`too_short` — client
+   still drops <400ms entirely, unchanged), derive a confidence flag from
+   verbose segment data and mark low-confidence transcripts in the UI and to
+   the agent.
+5. **Transcripts as OPS memory** — a full-text search index over transcripts +
+   a `search_transmissions` agent tool. "What did Alpha say about the west
+   lot?" is now answerable. DM-visibility rules identical to v2's agent
+   contract.
+6. **One channel truth** — a single shared channel-enumeration helper feeds the
+   chat list, the radio picker, unread totals, the dashboard, AND every agent
+   context query + a new `list_channels` tool. Quiet channels no longer vanish
+   from the agent's view; when the agent filters (archived, DMs), it must say
+   so.
+7. **Call-sign uniqueness + user hygiene** — a name held by a user active in
+   the last 7 days cannot be claimed by another device (checked at the gate,
+   enforced in `users.upsert`); the directory hides users inactive >30 days;
+   e2e-created users are marked ephemeral and swept with their content; a
+   one-off purge removes existing test debris.
+8. **Keep screen awake, visibly** — the existing on-duty wake lock becomes a
+   user-visible Settings toggle (default ON — today's behavior), with honest
+   copy about the locked-screen limit. The native path is documented in
+   NATIVE.md.
+
+**Explicit skip — threads.** Radio traffic is linear; threads would fight the
+metaphor. Recorded as a non-goal, not a deferral.
+
+### 9.3 Invariant interpretations (no changes)
+
+- **I5 (truthful roster)** now also covers the *directory*: the member list
+  shows only users active within 30 days, and test identities never accumulate.
+  (The radio roster was already self-cleaning.)
+- **I7 (flags)**: alert levels are per-user prefs, not team flags — no new
+  feature flag needed; OPS tooling additions ride the existing aiEnabled gate.
+
+### 9.4 Acceptance criteria (additions)
+
+- AC13 mentions: client B sends "@«A's name» …" in a team channel; A (not
+  viewing) gets an amber mention badge on the CHAT tab and the channel row;
+  opening the channel clears it. (Automated.)
+- AC14 mute: A sets a channel to MUTE from the thread header; B posts there; A's
+  tab LED does not light and unread total does not count it. (Automated.)
+- AC15 ack: after a transmission, B taps COPY on the clip; the sender's device
+  shows B's name on the clip's COPY line. (Automated.)
+- AC16 transmission→task: B creates a task from a clip; the OPS checklist total
+  increments. (Automated, admin/AI flag permitting.)
+- AC17 call-sign: a second device attempting a name active within 7 days is
+  rejected at the gate with a clear error. (Automated.)
+- AC18 wake toggle: Settings shows KEEP SCREEN AWAKE, default on, persisted
+  per device. (Automated presence/persistence; lock behavior manual on phone.)
+- AC19 STT gate: a 0.4–1s clip records `too_short` and shows no transcript
+  affordance; language is pinned; low-confidence transcripts carry a visible
+  flag. (Gate automated where the harness allows; language/confidence verified
+  manually with a real key.)
