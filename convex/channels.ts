@@ -5,6 +5,7 @@ import {
   type QueryCtx,
 } from "./_generated/server";
 import { v } from "convex/values";
+import type { Doc } from "./_generated/dataModel";
 import { assertCode, assertAdminCode } from "./access";
 import { CHANNELS } from "../src/channels";
 
@@ -14,6 +15,46 @@ export const ANNOUNCEMENTS_KEY = "Announcements";
 export function dmKey(a: string, b: string): string {
   const [x, y] = [a, b].sort();
   return `dm_${x}_${y}`;
+}
+
+// ── One channel truth (D21) ────────────────────────────────────────────────
+// Every surface that enumerates channels — chat list, radio picker, unread
+// totals, dashboard, agent context — goes through these.
+
+export const isLiveTeam = (c: Doc<"channels">) =>
+  c.kind === "team" && !c.archived;
+
+export const isVisibleDm = (c: Doc<"channels">, userId: string) =>
+  c.kind === "dm" && !!c.dmMembers?.includes(userId);
+
+/** Seeded order: radio channels first, then Announcements, then customs. */
+export function seededOrderOf(key: string): number {
+  const i = (CHANNELS as readonly string[]).indexOf(key);
+  if (i >= 0) return i;
+  if (key === ANNOUNCEMENTS_KEY) return CHANNELS.length;
+  return CHANNELS.length + 1;
+}
+
+/** Live team channels in seeded order. */
+export async function teamChannelRows(ctx: QueryCtx): Promise<Doc<"channels">[]> {
+  const all = await ctx.db.query("channels").collect();
+  return all
+    .filter(isLiveTeam)
+    .sort((a, b) => seededOrderOf(a.key) - seededOrderOf(b.key));
+}
+
+/** Everything this user may see: live team channels + their own DMs. */
+export async function visibleChannelRows(
+  ctx: QueryCtx,
+  userId: string,
+): Promise<{ team: Doc<"channels">[]; dms: Doc<"channels">[] }> {
+  const all = await ctx.db.query("channels").collect();
+  return {
+    team: all
+      .filter(isLiveTeam)
+      .sort((a, b) => seededOrderOf(a.key) - seededOrderOf(b.key)),
+    dms: all.filter((c) => isVisibleDm(c, userId)),
+  };
 }
 
 /**
@@ -55,12 +96,17 @@ export const ensureSeeded = mutation({
   },
 });
 
-/** Unread count for one channel (cheap: only scans messages after the cursor). */
-export async function unreadCount(
+export type AlertLevel = "all" | "mentions" | "mute";
+
+/**
+ * Unread + mention counts and the alert level for one channel, from one
+ * cursor read and one post-cursor window scan (cap 100 — counts saturate).
+ */
+export async function unreadState(
   ctx: QueryCtx,
   channelKey: string,
   userId: string,
-): Promise<number> {
+): Promise<{ unread: number; mentionUnread: number; alertLevel: AlertLevel }> {
   const read = await ctx.db
     .query("reads")
     .withIndex("by_user_channel", (q) =>
@@ -74,7 +120,14 @@ export async function unreadCount(
       q.eq("channelKey", channelKey).gt("createdAt", since),
     )
     .take(100);
-  return fresh.filter((m) => m.userId !== userId).length;
+  const others = fresh.filter((m) => m.userId !== userId);
+  return {
+    unread: others.length,
+    mentionUnread: others.filter((m) =>
+      m.mentions?.some((x) => x.userId === userId),
+    ).length,
+    alertLevel: read?.alertLevel ?? "all",
+  };
 }
 
 async function lastMessage(ctx: QueryCtx, channelKey: string) {
@@ -92,29 +145,19 @@ export const list = query({
   args: { userId: v.string(), accessCode: v.optional(v.string()) },
   handler: async (ctx, { userId, accessCode }) => {
     assertCode(accessCode);
-    const all = await ctx.db.query("channels").collect();
+    const rows = await visibleChannelRows(ctx, userId);
     const now = Date.now();
 
     const team = [];
-    for (const c of all) {
-      if (c.kind !== "team" || c.archived) continue;
+    for (const c of rows.team) {
       team.push({
         key: c.key,
         name: c.name,
         postRestricted: c.postRestricted,
-        unread: await unreadCount(ctx, c.key, userId),
+        ...(await unreadState(ctx, c.key, userId)),
         last: await lastMessage(ctx, c.key),
       });
     }
-    // Seeded order: radio channels first (constant order), then Announcements,
-    // then customs by creation.
-    const orderOf = (key: string) => {
-      const i = (CHANNELS as readonly string[]).indexOf(key);
-      if (i >= 0) return i;
-      if (key === ANNOUNCEMENTS_KEY) return CHANNELS.length;
-      return CHANNELS.length + 1;
-    };
-    team.sort((a, b) => orderOf(a.key) - orderOf(b.key));
 
     const users = await ctx.db.query("users").collect();
     const nameOf = new Map(users.map((u) => [u.userId, u.name]));
@@ -123,15 +166,14 @@ export const list = query({
     );
 
     const dms = [];
-    for (const c of all) {
-      if (c.kind !== "dm" || !c.dmMembers?.includes(userId)) continue;
-      const other = c.dmMembers.find((m) => m !== userId) ?? userId;
+    for (const c of rows.dms) {
+      const other = c.dmMembers?.find((m) => m !== userId) ?? userId;
       dms.push({
         key: c.key,
         otherUserId: other,
         name: nameOf.get(other) ?? "Unknown",
         online: onlineOf.get(other) ?? false,
-        unread: await unreadCount(ctx, c.key, userId),
+        ...(await unreadState(ctx, c.key, userId)),
         last: await lastMessage(ctx, c.key),
       });
     }
@@ -148,16 +190,10 @@ export const listForRadio = query({
   args: { accessCode: v.optional(v.string()) },
   handler: async (ctx, { accessCode }) => {
     assertCode(accessCode);
-    const all = await ctx.db.query("channels").collect();
-    const team = all.filter(
-      (c) => c.kind === "team" && !c.archived && !c.postRestricted,
-    );
-    const orderOf = (key: string) => {
-      const i = (CHANNELS as readonly string[]).indexOf(key);
-      return i >= 0 ? i : CHANNELS.length + 1;
-    };
-    team.sort((a, b) => orderOf(a.key) - orderOf(b.key));
-    return team.map((c) => ({ key: c.key, name: c.name }));
+    const team = await teamChannelRows(ctx);
+    return team
+      .filter((c) => !c.postRestricted)
+      .map((c) => ({ key: c.key, name: c.name }));
   },
 });
 

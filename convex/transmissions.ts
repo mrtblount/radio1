@@ -9,6 +9,13 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { assertCode } from "./access";
 
+/**
+ * Clips shorter than this transcribe as hallucinations (the "Það er það."
+ * failure — SPEC §9 P2), so they record as "too_short" and never reach Groq.
+ * Mirrored as a belt-and-braces check in transcribe.run.
+ */
+export const MIN_TRANSCRIBE_MS = 1000;
+
 export const uploadUrl = mutation({
   args: { accessCode: v.optional(v.string()) },
   handler: async (ctx, { accessCode }) => {
@@ -50,10 +57,12 @@ export const record = mutation({
       .unique();
     const name = user?.name ?? "Unknown";
 
+    // durationMs is client-supplied; the gate tolerates any value (D19).
+    const tooShort = clip.durationMs < MIN_TRANSCRIBE_MS;
     const id = await ctx.db.insert("transmissions", {
       ...clip,
       name,
-      transcriptStatus: "pending",
+      transcriptStatus: tooShort ? "too_short" : "pending",
     });
 
     await ctx.db.insert("messages", {
@@ -68,13 +77,48 @@ export const record = mutation({
       createdAt: Date.now(),
     });
 
-    await ctx.scheduler.runAfter(0, internal.transcribe.run, {
-      transmissionId: id,
-    });
+    if (!tooShort) {
+      await ctx.scheduler.runAfter(0, internal.transcribe.run, {
+        transmissionId: id,
+      });
+    }
     await ctx.scheduler.runAfter(0, internal.pushSend.notifyClip, {
       transmissionId: id,
     });
     return { id };
+  },
+});
+
+/**
+ * One-tap COPY (D24): toggle this user's ack on a clip. Idempotent per user;
+ * mistap-safe; senders can't ack their own transmission.
+ */
+export const ack = mutation({
+  args: {
+    id: v.id("transmissions"),
+    userId: v.string(),
+    accessCode: v.optional(v.string()),
+  },
+  handler: async (ctx, { id, userId, accessCode }) => {
+    assertCode(accessCode);
+    const row = await ctx.db.get(id);
+    if (!row) return;
+    await assertClipAccess(ctx, row.channelKey, userId);
+    if (row.userId === userId) return;
+    const acks = row.acks ?? [];
+    if (acks.some((a) => a.userId === userId)) {
+      await ctx.db.patch(id, {
+        acks: acks.filter((a) => a.userId !== userId),
+      });
+      return;
+    }
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .unique();
+    await ctx.db.patch(id, {
+      acks: [...acks, { userId, name: user?.name ?? "Unknown", at: Date.now() }],
+    });
   },
 });
 
@@ -114,6 +158,9 @@ export const clip = query({
       mimeType: row.mimeType,
       transcript: row.transcript ?? null,
       transcriptStatus: row.transcriptStatus,
+      transcriptConfidence: row.transcriptConfidence ?? null,
+      senderUserId: row.userId,
+      acks: (row.acks ?? []).map((a) => ({ userId: a.userId, name: a.name })),
     };
   },
 });
@@ -140,6 +187,8 @@ export const forChannel = query({
       durationMs: r.durationMs,
       transcript: r.transcript ?? null,
       transcriptStatus: r.transcriptStatus,
+      transcriptConfidence: r.transcriptConfidence ?? null,
+      ackCount: r.acks?.length ?? 0,
     }));
   },
 });
@@ -154,6 +203,7 @@ export const getForTranscription = internalQuery({
     return {
       storageId: row.storageId,
       mimeType: row.mimeType,
+      durationMs: row.durationMs,
       url: await ctx.storage.getUrl(row.storageId),
     };
   },
@@ -167,14 +217,17 @@ export const setTranscript = internalMutation({
       v.literal("done"),
       v.literal("failed"),
       v.literal("skipped"),
+      v.literal("too_short"),
     ),
+    confidence: v.optional(v.union(v.literal("ok"), v.literal("low"))),
   },
-  handler: async (ctx, { transmissionId, transcript, status }) => {
+  handler: async (ctx, { transmissionId, transcript, status, confidence }) => {
     const row = await ctx.db.get(transmissionId);
     if (!row) return;
     await ctx.db.patch(transmissionId, {
       transcript,
       transcriptStatus: status,
+      ...(confidence ? { transcriptConfidence: confidence } : {}),
     });
   },
 });

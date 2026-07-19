@@ -25,4 +25,12 @@ crons.daily(
   {},
 );
 
+// e2e identities and their content self-clean an hour after the run (D22).
+crons.interval(
+  "sweep ephemeral users",
+  { hours: 1 },
+  internal.maintenance.sweepEphemeralUsers,
+  {},
+);
+
 export default crons;
