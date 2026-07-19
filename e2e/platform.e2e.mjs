@@ -466,13 +466,33 @@ await bravo.page.waitForFunction(
   { timeout: 8000 },
 );
 await alpha.page.waitForTimeout(1500);
-const mutedLedLit = await alpha.page.evaluate(
-  () =>
-    !!document.querySelector(
-      '[data-testid="tab-chat"] .led.on-rx, [data-testid="tab-chat"] .led.on-tx',
-    ),
+// No amber: a plain message in a muted channel must never read as a mention.
+const mutedAmber = await alpha.page.evaluate(
+  () => !!document.querySelector('[data-testid="tab-chat"] .led.on-tx'),
 );
-check("AC14 muted channel does not light the tab LED", !mutedLedLit);
+check("AC14 muted channel never goes amber on the tab", !mutedAmber);
+// Row-scoped: the muted row itself stays dark despite holding an unread
+// message. (Scoped, not the global LED — earlier runs may have left unread
+// channels for this fresh identity until the hourly sweep clears them.)
+await alpha.page.click('[data-testid="tab-chat"]');
+await alpha.page.click('[data-testid="chat-back"]').catch(() => {});
+const mutedRow = await alpha.page.evaluate((name) => {
+  const row = [
+    ...document.querySelectorAll('[data-testid^="chat-channel-"]'),
+  ].find((el) => el.textContent.includes(name));
+  if (!row) return null;
+  return {
+    muted: row.dataset.muted === "true",
+    greenBadge: !!row.querySelector('[data-testid="unread-badge"]'),
+    ledLit: !!row.querySelector(".led.on-rx, .led.on-tx"),
+  };
+}, channelName);
+check(
+  "AC14 muted row stays dark despite the unread message",
+  !!mutedRow && mutedRow.muted && !mutedRow.greenBadge && !mutedRow.ledLit,
+  JSON.stringify(mutedRow),
+);
+await alpha.page.click('[data-testid="tab-radio"]');
 
 // ── AC17: call-sign uniqueness at the gate ────────────────────────────────
 console.log("— call sign: a second device can't take an active name —");

@@ -134,7 +134,14 @@ export function useRadio() {
     if (!keepAwakeRef.current) return;
     try {
       if ("wakeLock" in navigator && document.visibilityState === "visible") {
-        wakeLockRef.current = await navigator.wakeLock.request("screen");
+        const sentinel = await navigator.wakeLock.request("screen");
+        // The pref may have flipped off while the request was in flight
+        // (Settings double-tap): a stored sentinel would outlive the OFF.
+        if (!keepAwakeRef.current) {
+          void sentinel.release().catch(() => {});
+          return;
+        }
+        wakeLockRef.current = sentinel;
       }
     } catch {
       // Wake lock is best-effort (unsupported browser or low battery mode).

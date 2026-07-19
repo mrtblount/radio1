@@ -11,9 +11,9 @@ interface Props {
 
 const TYPING_THROTTLE_MS = 2_500;
 
-/** The @token being typed at the end of the draft, if any. */
-function mentionToken(body: string): string | null {
-  const m = /(?:^|\s)@([^\s@]*)$/.exec(body);
+/** The @token being typed immediately before the caret, if any. */
+function mentionToken(beforeCaret: string): string | null {
+  const m = /(?:^|\s)@([^\s@]*)$/.exec(beforeCaret);
   return m ? m[1] : null;
 }
 
@@ -25,6 +25,7 @@ export function Composer({
   mentionNames,
 }: Props) {
   const [body, setBody] = useState("");
+  const [caret, setCaret] = useState(0);
   const [sending, setSending] = useState(false);
   const lastTypingRef = useRef(0);
   const areaRef = useRef<HTMLTextAreaElement>(null);
@@ -36,6 +37,7 @@ export function Composer({
     try {
       await onSend(clean);
       setBody("");
+      setCaret(0);
       if (areaRef.current) areaRef.current.style.height = "auto";
     } finally {
       setSending(false);
@@ -43,7 +45,9 @@ export function Composer({
     areaRef.current?.focus();
   };
 
-  const token = mentionToken(body);
+  // Suggestions follow the caret: typing @ mid-draft works, and moving the
+  // caret out of a token dismisses the overlay.
+  const token = mentionToken(body.slice(0, caret));
   const suggestions =
     token !== null && mentionNames?.length
       ? mentionNames
@@ -52,8 +56,15 @@ export function Composer({
       : [];
 
   const insertMention = (name: string) => {
-    setBody((b) => b.replace(/@[^\s@]*$/, `@${name} `));
-    areaRef.current?.focus();
+    const head = body.slice(0, caret).replace(/@[^\s@]*$/, `@${name} `);
+    const next = head + body.slice(caret);
+    setBody(next);
+    setCaret(head.length);
+    const el = areaRef.current;
+    el?.focus();
+    requestAnimationFrame(() => {
+      el?.setSelectionRange(head.length, head.length);
+    });
   };
 
   return (
@@ -91,6 +102,7 @@ export function Composer({
         rows={1}
         onChange={(e) => {
           setBody(e.target.value);
+          setCaret(e.target.selectionStart ?? e.target.value.length);
           const el = e.target;
           el.style.height = "auto";
           el.style.height = `${Math.min(el.scrollHeight, 96)}px`;
@@ -99,6 +111,10 @@ export function Composer({
             lastTypingRef.current = now;
             onTyping();
           }
+        }}
+        onSelect={(e) => {
+          const el = e.target as HTMLTextAreaElement;
+          setCaret(el.selectionStart ?? el.value.length);
         }}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) {

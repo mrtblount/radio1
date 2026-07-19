@@ -152,10 +152,6 @@ export const addFromTransmission = mutation({
     const dupe = today.find((t) => t.sourceTransmissionId === transmissionId);
     if (dupe) return { label: dupe.label, deduped: true as const };
 
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
-      .unique();
     const transcript =
       clip.transcriptStatus === "done" ? (clip.transcript ?? "").trim() : "";
     const clock = new Date(clip.startedAt).toLocaleTimeString("en-US", {
@@ -167,12 +163,9 @@ export const addFromTransmission = mutation({
       transcript.length >= 2
         ? transcript.slice(0, 100)
         : `Follow up: clip from ${clip.name} at ${clock}`;
-    const clean = await addTask(
-      ctx,
-      label,
-      user?.name ?? userId,
-      transmissionId,
-    );
+    // createdBy = userId (not display name) so the D22 purge cascade can
+    // match it exactly; no UI surface renders task.createdBy.
+    const clean = await addTask(ctx, label, userId, transmissionId);
     return { label: clean, deduped: false as const };
   },
 });

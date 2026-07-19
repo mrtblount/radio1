@@ -33,7 +33,9 @@ function renderBody(
   const names = [...mentions]
     .sort((a, b) => b.name.length - a.name.length)
     .map((m) => escapeRe(m.name));
-  const re = new RegExp(`(@(?:${names.join("|")}))`, "gi");
+  // Boundaries mirror the server's resolveMentions — "tony@samsung.com"
+  // must not light up for a user named Sam.
+  const re = new RegExp(`(?<![\\w-])(@(?:${names.join("|")}))(?![\\w-])`, "gi");
   return body.split(re).map((part, i) =>
     i % 2 === 1 ? (
       <span

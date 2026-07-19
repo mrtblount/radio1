@@ -103,9 +103,11 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
  * Resolve @mentions against the team directory (D23). Case-insensitive
- * `@name` with a word boundary after it — "@Alpha2" must not mention "Alpha".
- * When stale duplicate rows share a name, the most recently active holder
- * wins. Names are denormalized for rendering.
+ * `@name` bounded on both sides ("tony@alpha.net" and "@Alpha2" mention
+ * no one) and matched longest-name-first with span consumption, so
+ * "@Sam Cole" doesn't also mention "Sam". When stale duplicate rows share
+ * a name, the most recently active holder wins. Names are denormalized
+ * for rendering.
  */
 async function resolveMentions(
   ctx: QueryCtx,
@@ -119,11 +121,30 @@ async function resolveMentions(
     if (u.userId === senderId) continue;
     const key = u.name.trim().toLowerCase();
     if (key.length < 2) continue;
-    if (!new RegExp(`@${escapeRe(key)}(?![\\w-])`, "i").test(body)) continue;
     const held = byName.get(key);
     if (!held || u.lastActiveAt > held.lastActiveAt) byName.set(key, u);
   }
-  return [...byName.values()].map((u) => ({ userId: u.userId, name: u.name }));
+
+  const candidates = [...byName.entries()].sort(
+    (a, b) => b[0].length - a[0].length,
+  );
+  const claimed: Array<[number, number]> = [];
+  const mentioned: { userId: string; name: string }[] = [];
+  for (const [key, u] of candidates) {
+    const re = new RegExp(
+      `(?<![\\w-])@${escapeRe(key)}(?![\\w-])`,
+      "gi",
+    );
+    for (const m of body.matchAll(re)) {
+      const start = m.index ?? 0;
+      const end = start + m[0].length;
+      if (claimed.some(([s, e]) => start < e && end > s)) continue;
+      claimed.push([start, end]);
+      mentioned.push({ userId: u.userId, name: u.name });
+      break;
+    }
+  }
+  return mentioned;
 }
 
 async function upsertRead(

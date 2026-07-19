@@ -54,58 +54,65 @@ export const sweepStale = internalMutation({
   },
 });
 
+/** Delete one transmission row and its storage blob (best-effort). */
+async function deleteClip(ctx: MutationCtx, t: Doc<"transmissions">) {
+  try {
+    await ctx.storage.delete(t.storageId);
+  } catch {
+    // blob already gone — the row still goes
+  }
+  await ctx.db.delete(t._id);
+}
+
 /**
- * Delete one user and their durable footprint (D22): authored messages,
+ * Delete one user and their OWN durable footprint (D22): authored messages,
  * transmissions (with storage blobs), reads, pushSubs, aiMessages, typing,
- * channels they created, and DM channels they belong to (with those channels'
- * content). Other users' reads rows pointing at deleted channels are left —
- * tiny and harmless. Table scans here are fine: this only runs against test
- * debris on small tables.
+ * tasks they created. Channels they created or DMs they belong to are
+ * deleted ONLY when they hold no other user's content — the ephemeral flag
+ * is client-asserted, so the cascade must never be usable to destroy
+ * teammates' data (a channel the team adopted survives; the orphan pass
+ * below reclaims empties). Table scans here are fine: this only runs
+ * against test debris on small tables.
  */
 async function purgeUserCascade(ctx: MutationCtx, user: Doc<"users">) {
   const uid = user.userId;
 
-  const channels = await ctx.db.query("channels").collect();
-  const doomed = channels.filter(
-    (c) =>
-      (c.kind === "team" && c.createdBy === uid) ||
-      (c.kind === "dm" && !!c.dmMembers?.includes(uid)),
-  );
-  for (const c of doomed) {
-    const msgs = await ctx.db
-      .query("messages")
-      .withIndex("by_channel", (q) => q.eq("channelKey", c.key))
-      .collect();
-    for (const m of msgs) await ctx.db.delete(m._id);
-    const clips = await ctx.db
-      .query("transmissions")
-      .withIndex("by_channel", (q) => q.eq("channelKey", c.key))
-      .collect();
-    for (const t of clips) {
-      try {
-        await ctx.storage.delete(t.storageId);
-      } catch {
-        // blob already gone — the row still goes
-      }
-      await ctx.db.delete(t._id);
-    }
-    await ctx.db.delete(c._id);
-  }
-
+  // The user's own rows go first, so the channel emptiness check below sees
+  // only what OTHER users contributed.
   const messages = await ctx.db.query("messages").collect();
   for (const m of messages) {
     if (m.userId === uid) await ctx.db.delete(m._id);
   }
   const transmissions = await ctx.db.query("transmissions").collect();
   for (const t of transmissions) {
-    if (t.userId !== uid) continue;
-    try {
-      await ctx.storage.delete(t.storageId);
-    } catch {
-      // blob already gone
-    }
-    await ctx.db.delete(t._id);
+    if (t.userId === uid) await deleteClip(ctx, t);
   }
+  const tasks = await ctx.db.query("tasks").collect();
+  for (const t of tasks) {
+    if (t.createdBy === uid || t.createdBy === user.name) {
+      await ctx.db.delete(t._id);
+    }
+  }
+
+  const channels = await ctx.db.query("channels").collect();
+  const candidates = channels.filter(
+    (c) =>
+      (c.kind === "team" && c.createdBy === uid) ||
+      (c.kind === "dm" && !!c.dmMembers?.includes(uid)),
+  );
+  for (const c of candidates) {
+    const remainingMsg = await ctx.db
+      .query("messages")
+      .withIndex("by_channel", (q) => q.eq("channelKey", c.key))
+      .first();
+    const remainingClip = await ctx.db
+      .query("transmissions")
+      .withIndex("by_channel", (q) => q.eq("channelKey", c.key))
+      .first();
+    if (remainingMsg || remainingClip) continue; // someone else's content — spare it
+    await ctx.db.delete(c._id);
+  }
+
   const reads = await ctx.db
     .query("reads")
     .withIndex("by_user_channel", (q) => q.eq("userId", uid))
@@ -129,17 +136,58 @@ async function purgeUserCascade(ctx: MutationCtx, user: Doc<"users">) {
   await ctx.db.delete(user._id);
 }
 
+/**
+ * Reclaim channels stranded by purged users: a non-seeded team channel whose
+ * creator no longer exists and that holds nothing, or a DM where neither
+ * party exists (its leftovers go too). Converges over successive sweeps as
+ * per-user purges empty them out.
+ */
+async function sweepOrphanChannels(ctx: MutationCtx) {
+  const users = await ctx.db.query("users").collect();
+  const alive = new Set(users.map((u) => u.userId));
+  const channels = await ctx.db.query("channels").collect();
+  for (const c of channels) {
+    if (c.kind === "team") {
+      if (c.createdBy === "system" || alive.has(c.createdBy)) continue;
+      const msg = await ctx.db
+        .query("messages")
+        .withIndex("by_channel", (q) => q.eq("channelKey", c.key))
+        .first();
+      const clip = await ctx.db
+        .query("transmissions")
+        .withIndex("by_channel", (q) => q.eq("channelKey", c.key))
+        .first();
+      if (!msg && !clip) await ctx.db.delete(c._id);
+    } else if (c.kind === "dm" && c.dmMembers?.every((m) => !alive.has(m))) {
+      const msgs = await ctx.db
+        .query("messages")
+        .withIndex("by_channel", (q) => q.eq("channelKey", c.key))
+        .collect();
+      for (const m of msgs) await ctx.db.delete(m._id);
+      const clips = await ctx.db
+        .query("transmissions")
+        .withIndex("by_channel", (q) => q.eq("channelKey", c.key))
+        .collect();
+      for (const t of clips) await deleteClip(ctx, t);
+      await ctx.db.delete(c._id);
+    }
+  }
+}
+
 /** Hourly: e2e identities and everything they touched disappear (D22). */
 export const sweepEphemeralUsers = internalMutation({
   args: {},
   handler: async (ctx) => {
     const cutoff = Date.now() - EPHEMERAL_TTL_MS;
     const users = await ctx.db.query("users").collect();
+    let purged = false;
     for (const u of users) {
       if (u.ephemeral && u.lastActiveAt < cutoff) {
         await purgeUserCascade(ctx, u);
+        purged = true;
       }
     }
+    if (purged) await sweepOrphanChannels(ctx);
   },
 });
 
@@ -161,6 +209,7 @@ export const purgeUsers = internalMutation({
         purged++;
       }
     }
+    if (purged > 0) await sweepOrphanChannels(ctx);
     return { purged };
   },
 });

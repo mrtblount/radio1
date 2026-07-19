@@ -63,9 +63,15 @@ export function ChatThread({
   const directory = useQuery(api.users.list, code);
   const mentionNames = useMemo(
     () =>
-      (directory ?? [])
-        .filter((u) => u.userId !== identity.userId)
-        .map((u) => u.name),
+      // Set-dedupe: a reclaimed call sign can appear on two directory rows
+      // (30d window vs 7d hold) and duplicate names would collide as keys.
+      [
+        ...new Set(
+          (directory ?? [])
+            .filter((u) => u.userId !== identity.userId)
+            .map((u) => u.name),
+        ),
+      ],
     [directory, identity.userId],
   );
 

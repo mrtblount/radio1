@@ -23,7 +23,7 @@ interface DirectState {
 
 export default function App() {
   const { state, join, leave, pressPTT, releasePTT, setKeepAwake } = useRadio();
-  const { identified, identity, identify } = useIdentity();
+  const { identified, identity, identify, revoke } = useIdentity();
   const convex = useConvex();
   const [tab, setTab] = useState<ShellTab>("radio");
   const [gateError, setGateError] = useState<string | null>(null);
@@ -66,9 +66,21 @@ export default function App() {
   }, [identified, state.screen, state.name, identify, leave]);
 
   // Backfill: upgraded v1 devices are already "identified" (stored name) but
-  // have no server users row — upsert once on load (idempotent).
+  // have no server users row — upsert once on load (idempotent). A name-taken
+  // refusal here means the persisted call sign was claimed while this device
+  // had no row (a lost gate race that outlived its session): silently
+  // swallowing it would strand the device rowless forever — un-mentionable,
+  // un-DM-able, invisible to push. Back to the gate instead.
   useEffect(() => {
-    if (identified) void identify(identity.name, identity.code);
+    if (identified) {
+      void identify(identity.name, identity.code).then((err) => {
+        if (err === NAME_TAKEN_MSG) {
+          leave();
+          revoke();
+          setGateError(err);
+        }
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

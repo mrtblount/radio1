@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import {
+  forceGate,
   getUserId,
   isEphemeralSession,
   isIdentified,
@@ -61,5 +62,12 @@ export function useIdentity() {
     [upsert],
   );
 
-  return { identified, identity, identify };
+  /** Server refused our persisted identity (e.g. call sign taken while we
+   *  were offline): drop back to the gate, this session and the next. */
+  const revoke = useCallback(() => {
+    forceGate();
+    setIdentified(false);
+  }, []);
+
+  return { identified, identity, identify, revoke };
 }

@@ -134,7 +134,9 @@ export const messageRecipients = internalQuery({
         pinged.push(u.userId); // no activity suppression for mentions
         continue;
       }
-      if (level === "mentions") continue;
+      // "mentions" filters plain team chatter only — DMs and announcements
+      // keep v2 behavior unless explicitly muted (D23).
+      if (level === "mentions" && !always) continue;
       // Team-channel chatter doesn't ping people who are looking at the app.
       if (!always && u.lastActiveAt >= now - ACTIVE_MS) continue;
       regular.push(u.userId);
@@ -204,9 +206,11 @@ export const clipRecipients = internalQuery({
       if (u.userId === clip.userId) continue;
       if (isDm && !channel?.dmMembers?.includes(u.userId)) continue;
       if (liveListeners.has(u.userId)) continue;
-      // Clips can't mention anyone: "mentions" and "mute" both stay quiet (D23).
       const level = await alertLevelFor(ctx, u.userId, clip.channelKey);
-      if (level !== "all") continue;
+      // Mute silences clips; "mentions" silences only team-channel clips —
+      // a missed DIRECT call still pushes unless explicitly muted (D23).
+      if (level === "mute") continue;
+      if (level === "mentions" && !isDm) continue;
       userIds.push(u.userId);
     }
 
