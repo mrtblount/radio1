@@ -99,10 +99,13 @@ export const send = mutation({
   },
 });
 
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 /**
  * Resolve @mentions against the team directory (D23). Case-insensitive
- * `@` + name containment; when stale duplicate rows share a name, the most
- * recently active holder wins. Names are denormalized for rendering.
+ * `@name` with a word boundary after it — "@Alpha2" must not mention "Alpha".
+ * When stale duplicate rows share a name, the most recently active holder
+ * wins. Names are denormalized for rendering.
  */
 async function resolveMentions(
   ctx: QueryCtx,
@@ -110,13 +113,13 @@ async function resolveMentions(
   senderId: string,
 ): Promise<{ userId: string; name: string }[]> {
   if (!body.includes("@")) return [];
-  const lower = body.toLowerCase();
   const users = await ctx.db.query("users").collect();
   const byName = new Map<string, (typeof users)[number]>();
   for (const u of users) {
     if (u.userId === senderId) continue;
     const key = u.name.trim().toLowerCase();
-    if (key.length < 2 || !lower.includes(`@${key}`)) continue;
+    if (key.length < 2) continue;
+    if (!new RegExp(`@${escapeRe(key)}(?![\\w-])`, "i").test(body)) continue;
     const held = byName.get(key);
     if (!held || u.lastActiveAt > held.lastActiveAt) byName.set(key, u);
   }
@@ -166,12 +169,16 @@ export const unreadSummary = query({
     const rows = await visibleChannelRows(ctx, userId);
     let total = 0;
     let mentions = 0;
+    let mutedMentions = 0;
     for (const c of [...rows.team, ...rows.dms]) {
       const s = await unreadState(ctx, c.key, userId);
       mentions += s.mentionUnread;
-      if (s.alertLevel !== "mute") total += s.unread;
+      if (s.alertLevel === "mute") mutedMentions += s.mentionUnread;
+      else total += s.unread;
     }
-    return { total, mentions };
+    // App-icon badge = total + mutedMentions (a muted channel's mention still
+    // counts; its other unread doesn't; nothing is double-counted).
+    return { total, mentions, mutedMentions };
   },
 });
 

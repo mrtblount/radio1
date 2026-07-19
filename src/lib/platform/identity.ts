@@ -14,6 +14,7 @@ export { loadAccessCode, loadDisplayName };
 
 const USER_ID_KEY = "team-radio:userId";
 const FORCE_GATE_KEY = "team-radio:forceGate";
+const E2E_KEY = "team-radio:e2e";
 
 function safeGet(key: string): string {
   try {
@@ -69,4 +70,10 @@ export function saveIdentity(name: string, accessCode: string) {
 export function forceGate() {
   safeSet(FORCE_GATE_KEY, "1");
   saveAccessCode("");
+}
+
+/** Test harnesses set this key so their identities register as ephemeral and
+ *  get swept with their content (D22). Never set by the app itself. */
+export function isEphemeralSession(): boolean {
+  return safeGet(E2E_KEY) === "1";
 }

@@ -9,6 +9,7 @@ import {
   initAudio,
 } from "../lib/radio/beeps";
 import {
+  loadKeepAwake,
   mintSessionId,
   saveAccessCode,
   saveDisplayName,
@@ -82,6 +83,9 @@ export function useRadio() {
   const joinedRef = useRef(false);
   const prevFloorRef = useRef<FloorState | null>(null);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+  // User pref (D18): default ON. Gates requestWakeLock; the sentinel itself
+  // stays owned by this hook — one owner, one lifecycle.
+  const keepAwakeRef = useRef<boolean>(loadKeepAwake());
   const recorderRef = useRef<TransmissionRecorder | null>(null);
   // Join epoch: bumped by every join() and leave(). Async continuations from a
   // previous epoch (an in-flight join, a floor grant) must bail when it moved —
@@ -127,6 +131,7 @@ export function useRadio() {
   }, []);
 
   const requestWakeLock = useCallback(async () => {
+    if (!keepAwakeRef.current) return;
     try {
       if ("wakeLock" in navigator && document.visibilityState === "visible") {
         wakeLockRef.current = await navigator.wakeLock.request("screen");
@@ -135,6 +140,20 @@ export function useRadio() {
       // Wake lock is best-effort (unsupported browser or low battery mode).
     }
   }, []);
+
+  /** Settings toggle (D18): takes effect immediately while on duty. */
+  const setKeepAwake = useCallback(
+    (on: boolean) => {
+      keepAwakeRef.current = on;
+      if (on) {
+        if (joinedRef.current) void requestWakeLock();
+      } else {
+        wakeLockRef.current?.release().catch(() => {});
+        wakeLockRef.current = null;
+      }
+    },
+    [requestWakeLock],
+  );
 
   const join = useCallback(
     async (name: string, channel: string, accessCode = "") => {
@@ -437,5 +456,5 @@ export function useRadio() {
     return () => window.removeEventListener("pagehide", onPageHide);
   }, []);
 
-  return { state, join, leave, pressPTT, releasePTT };
+  return { state, join, leave, pressPTT, releasePTT, setKeepAwake };
 }

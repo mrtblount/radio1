@@ -5,6 +5,8 @@ interface Props {
   onTab: (tab: ShellTab) => void;
   showOps: boolean;
   chatUnread: number;
+  /** Unread @mentions of me — amber beats green on the chat LED (D23). */
+  chatMentions?: number;
   /** On-duty on a radio channel right now. */
   radioActive: boolean;
   onSettings: () => void;
@@ -16,6 +18,7 @@ export function TabBar({
   onTab,
   showOps,
   chatUnread,
+  chatMentions = 0,
   radioActive,
   onSettings,
 }: Props) {
@@ -25,7 +28,11 @@ export function TabBar({
     led: "off" | "rx" | "tx";
   }> = [
     { key: "radio", label: "Radio", led: radioActive ? "tx" : "off" },
-    { key: "chat", label: "Chat", led: chatUnread > 0 ? "rx" : "off" },
+    {
+      key: "chat",
+      label: "Chat",
+      led: chatMentions > 0 ? "tx" : chatUnread > 0 ? "rx" : "off",
+    },
     ...(showOps
       ? [{ key: "ops" as const, label: "Ops", led: "off" as const }]
       : []),
@@ -54,7 +61,9 @@ export function TabBar({
             <span
               className={`led ${
                 item.led === "tx"
-                  ? "on-tx"
+                  ? item.key === "chat"
+                    ? "on-tx rx-blink"
+                    : "on-tx"
                   : item.led === "rx"
                     ? "on-rx rx-blink"
                     : ""

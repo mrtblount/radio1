@@ -67,6 +67,7 @@ export function DashStrip({ identity, open, onToggle }: Props) {
           {cards.map((c) => (
             <div
               key={c.label}
+              data-testid={`dash-${c.label.replace(/\s/g, "-")}`}
               className="flex-1 rounded-md px-3 py-2.5"
               style={{ background: "var(--panel)", border: "1px solid var(--line)" }}
             >

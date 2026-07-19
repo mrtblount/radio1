@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { formatDuration } from "../../lib/platform/format";
@@ -15,14 +15,19 @@ interface Props {
 
 /** Playable radio transmission with its transcript, inline in the log. */
 export function ClipMessage({ clipId, accessCode }: Props) {
+  const myId = getUserId();
+  const codeArg = accessCode ? { accessCode } : {};
   const clip = useQuery(api.transmissions.clip, {
     id: clipId,
-    userId: getUserId(),
-    ...(accessCode ? { accessCode } : {}),
+    userId: myId,
+    ...codeArg,
   });
+  const ackClip = useMutation(api.transmissions.ack);
+  const addFromTransmission = useMutation(api.tasks.addFromTransmission);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [showTranscript, setShowTranscript] = useState(false);
+  const [tasked, setTasked] = useState(false);
 
   useEffect(
     () => () => {
@@ -47,6 +52,11 @@ export function ClipMessage({ clipId, accessCode }: Props) {
       </p>
     );
   }
+
+  const mine = clip.senderUserId === myId;
+  const isDm = clip.channelKey.startsWith("dm_");
+  const acks = clip.acks ?? [];
+  const ackedByMe = acks.some((a) => a.userId === myId);
 
   const toggle = () => {
     if (!audioRef.current) {
@@ -108,19 +118,34 @@ export function ClipMessage({ clipId, accessCode }: Props) {
           {formatDuration(clip.durationMs)}
         </span>
         {(clip.transcript || clip.transcriptStatus === "pending") && (
-          <button
-            type="button"
-            data-testid="clip-transcript-toggle"
-            onClick={() => setShowTranscript((s) => !s)}
-            className="silkscreen ml-auto rounded px-2 py-1"
-            style={{
-              fontSize: "0.55rem",
-              color: showTranscript ? "var(--ink)" : "var(--ink-dim)",
-              border: "1px solid var(--line)",
-            }}
-          >
-            transcript
-          </button>
+          <div className="ml-auto flex items-center gap-1.5">
+            {clip.transcriptConfidence === "low" && clip.transcript && (
+              <span
+                data-testid="clip-lowconf"
+                className="silkscreen rounded px-1.5 py-0.5"
+                style={{
+                  fontSize: "0.5rem",
+                  color: "var(--tx)",
+                  border: "1px solid var(--tx)",
+                }}
+              >
+                low conf
+              </span>
+            )}
+            <button
+              type="button"
+              data-testid="clip-transcript-toggle"
+              onClick={() => setShowTranscript((s) => !s)}
+              className="silkscreen rounded px-2 py-1"
+              style={{
+                fontSize: "0.55rem",
+                color: showTranscript ? "var(--ink)" : "var(--ink-dim)",
+                border: "1px solid var(--line)",
+              }}
+            >
+              transcript
+            </button>
+          </div>
         )}
       </div>
       {showTranscript && (
@@ -138,6 +163,63 @@ export function ClipMessage({ clipId, accessCode }: Props) {
               ? "transcribing…"
               : "no transcript")}
         </p>
+      )}
+      {(!mine || !isDm || acks.length > 0) && (
+        <div className="mt-1.5 flex min-w-0 items-center gap-2">
+          {!mine && (
+            <button
+              type="button"
+              data-testid="clip-ack"
+              onClick={() => {
+                void ackClip({ id: clipId, userId: myId, ...codeArg }).catch(
+                  () => {},
+                );
+              }}
+              className="silkscreen rounded px-2.5 py-1.5"
+              style={{
+                fontSize: "0.55rem",
+                background: ackedByMe ? "var(--tx)" : "transparent",
+                color: ackedByMe ? "#141414" : "var(--ink-dim)",
+                border: `1px solid ${ackedByMe ? "var(--tx)" : "var(--line)"}`,
+              }}
+            >
+              copy
+            </button>
+          )}
+          {!isDm && (
+            <button
+              type="button"
+              data-testid="clip-task"
+              disabled={tasked}
+              onClick={() => {
+                void addFromTransmission({
+                  transmissionId: clipId,
+                  userId: myId,
+                  ...codeArg,
+                })
+                  .then(() => setTasked(true))
+                  .catch(() => {});
+              }}
+              className="silkscreen rounded px-2.5 py-1.5"
+              style={{
+                fontSize: "0.55rem",
+                color: tasked ? "var(--rx)" : "var(--ink-dim)",
+                border: `1px solid ${tasked ? "var(--rx)" : "var(--line)"}`,
+              }}
+            >
+              {tasked ? "tasked ✓" : "→ task"}
+            </button>
+          )}
+          {acks.length > 0 && (
+            <span
+              data-testid="clip-ack-names"
+              className="silkscreen ml-auto min-w-0 truncate"
+              style={{ fontSize: "0.55rem", color: "var(--rx)" }}
+            >
+              copy: {acks.map((a) => a.name).join(" · ")}
+            </span>
+          )}
+        </div>
       )}
     </div>
   );

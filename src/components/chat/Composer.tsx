@@ -5,11 +5,25 @@ interface Props {
   placeholder?: string;
   onSend: (body: string) => Promise<void> | void;
   onTyping?: () => void;
+  /** Team member names offered as @-mention completions (D23). */
+  mentionNames?: string[];
 }
 
 const TYPING_THROTTLE_MS = 2_500;
 
-export function Composer({ disabled, placeholder, onSend, onTyping }: Props) {
+/** The @token being typed at the end of the draft, if any. */
+function mentionToken(body: string): string | null {
+  const m = /(?:^|\s)@([^\s@]*)$/.exec(body);
+  return m ? m[1] : null;
+}
+
+export function Composer({
+  disabled,
+  placeholder,
+  onSend,
+  onTyping,
+  mentionNames,
+}: Props) {
   const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);
   const lastTypingRef = useRef(0);
@@ -29,11 +43,45 @@ export function Composer({ disabled, placeholder, onSend, onTyping }: Props) {
     areaRef.current?.focus();
   };
 
+  const token = mentionToken(body);
+  const suggestions =
+    token !== null && mentionNames?.length
+      ? mentionNames
+          .filter((n) => n.toLowerCase().startsWith(token.toLowerCase()))
+          .slice(0, 5)
+      : [];
+
+  const insertMention = (name: string) => {
+    setBody((b) => b.replace(/@[^\s@]*$/, `@${name} `));
+    areaRef.current?.focus();
+  };
+
   return (
     <div
-      className="flex items-end gap-2 px-3 py-2.5"
+      className="relative flex items-end gap-2 px-3 py-2.5"
       style={{ background: "var(--panel)", borderTop: "1px solid var(--line)" }}
     >
+      {suggestions.length > 0 && (
+        <div
+          data-testid="mention-suggest"
+          className="absolute bottom-full left-3 right-3 mb-1 overflow-hidden rounded-md"
+          style={{ background: "var(--panel-2)", border: "1px solid var(--line)" }}
+        >
+          {suggestions.map((n) => (
+            <button
+              key={n}
+              type="button"
+              data-testid={`mention-option-${n}`}
+              onClick={() => insertMention(n)}
+              className="block w-full px-3.5 py-2.5 text-left text-sm"
+              style={{ color: "var(--ink)" }}
+            >
+              <span style={{ color: "var(--tx)" }}>@</span>
+              {n}
+            </button>
+          ))}
+        </div>
+      )}
       <textarea
         ref={areaRef}
         data-testid="chat-composer"

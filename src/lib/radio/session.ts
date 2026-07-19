@@ -1,5 +1,6 @@
 const NAME_KEY = "team-radio:name";
 const CODE_KEY = "team-radio:code";
+const KEEP_AWAKE_KEY = "team-radio:keepAwake";
 
 /**
  * A session identity lives exactly as long as one app load. A fresh id per load
@@ -40,5 +41,23 @@ export function saveAccessCode(code: string): void {
     localStorage.setItem(CODE_KEY, code);
   } catch {
     // private browsing — they'll re-enter next time
+  }
+}
+
+/** Keep the screen awake while on duty (D18). Default ON when unset —
+ *  that's been the behavior since v1 and NATIVE.md sells it as such. */
+export function loadKeepAwake(): boolean {
+  try {
+    return localStorage.getItem(KEEP_AWAKE_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+export function saveKeepAwake(on: boolean): void {
+  try {
+    localStorage.setItem(KEEP_AWAKE_KEY, on ? "1" : "0");
+  } catch {
+    // private browsing — the default (on) applies next load
   }
 }
