@@ -9,20 +9,25 @@
     "preview": "vite preview",
     "convex:dev": "convex dev",
     "typecheck": "tsc -b --noEmit",
-    "e2e": "node e2e/ptt.e2e.mjs"
+    "e2e": "node e2e/ptt.e2e.mjs && node e2e/platform.e2e.mjs",
+    "e2e:ptt": "node e2e/ptt.e2e.mjs",
+    "e2e:platform": "node e2e/platform.e2e.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.112.2",
     "@fontsource/barlow": "^5.2.8",
     "@fontsource/saira-condensed": "^5.2.8",
     "convex": "^1.24.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.0",
     "@types/node": "^26.1.1",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
+    "@types/web-push": "^3.6.4",
     "@vitejs/plugin-react": "^4.3.4",
     "playwright": "^1.61.1",
     "tailwindcss": "^4.1.0",

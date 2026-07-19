@@ -26,3 +26,21 @@ export const config = query({
   args: {},
   handler: async () => ({ codeRequired: !!process.env.ACCESS_CODE }),
 });
+
+/**
+ * Optional admin code (same pattern): gates the admin panel (feature flags,
+ * channel archive, checklist template).
+ *   npx convex env set ADMIN_CODE <code> [--prod]
+ * Unset → admin features report "not configured" and stay locked.
+ */
+export function checkAdminCode(provided?: string): boolean {
+  const expected = process.env.ADMIN_CODE;
+  if (!expected) return false;
+  return provided === expected;
+}
+
+export function assertAdminCode(provided?: string): void {
+  if (!checkAdminCode(provided)) {
+    throw new Error("Admin access denied: missing or invalid admin code");
+  }
+}

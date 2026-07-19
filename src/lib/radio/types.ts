@@ -2,6 +2,8 @@ export interface Member {
   sessionId: string;
   name: string;
   joinedAt: number;
+  /** Stable device identity, when the client provided one (v2+). */
+  userId?: string;
 }
 
 export interface FloorState {
@@ -37,7 +39,13 @@ export interface RadioBackend {
   /** Whether the deployment currently requires an access code to join. */
   codeRequired(): Promise<boolean>;
 
-  join(sessionId: string, name: string, channel: string): Promise<JoinResult>;
+  join(
+    sessionId: string,
+    name: string,
+    channel: string,
+    /** Stable device identity (chat/user layer); optional for compatibility. */
+    userId?: string,
+  ): Promise<JoinResult>;
   leave(sessionId: string): Promise<void>;
 
   acquireFloor(

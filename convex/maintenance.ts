@@ -33,5 +33,18 @@ export const sweepStale = internalMutation({
       .withIndex("by_createdAt", (q) => q.lt("createdAt", now - SIGNAL_TTL_MS))
       .collect();
     for (const s of oldSignals) await ctx.db.delete(s._id);
+
+    // Spent typing beacons (clients ignore them past `until`; this is hygiene).
+    const beacons = await ctx.db.query("typing").collect();
+    for (const b of beacons) {
+      if (b.until < now - 10_000) await ctx.db.delete(b._id);
+    }
+
+    // Unanswered direct-call rings.
+    const rings = await ctx.db
+      .query("directCalls")
+      .withIndex("by_expiresAt", (q) => q.lt("expiresAt", now))
+      .collect();
+    for (const r of rings) await ctx.db.delete(r._id);
   },
 });
