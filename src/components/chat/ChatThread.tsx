@@ -203,8 +203,14 @@ export function ChatThread({
     <div className="flex h-full flex-col">
       {/* Header */}
       <header
-        className="flex items-center gap-3 px-4 py-3"
-        style={{ background: "var(--panel)", borderBottom: "1px solid var(--line)" }}
+        className="flex items-center gap-3 px-4 pb-3"
+        style={{
+          background: "var(--panel)",
+          borderBottom: "1px solid var(--line)",
+          // Standalone PWA: content extends under the status bar — pad below
+          // it (same pattern as every other top-level header).
+          paddingTop: "max(env(safe-area-inset-top), 0.75rem)",
+        }}
       >
         <button
           type="button"

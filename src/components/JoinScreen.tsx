@@ -64,7 +64,7 @@ export function JoinScreen({
 
   return (
     <div
-      className="mx-auto flex h-full max-w-md flex-col px-6"
+      className="mx-auto flex h-full max-w-md flex-col overflow-y-auto px-6"
       style={{ paddingTop: "max(env(safe-area-inset-top), 2.5rem)" }}
     >
       <header className="mb-10 mt-6">

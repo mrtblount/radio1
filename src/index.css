@@ -29,7 +29,26 @@ body,
   overscroll-behavior: none;
 }
 
+/* Installed-PWA reality (iOS standalone, black-translucent): the 100% height
+   chain goes stale after the keyboard opens, and iOS scrolls the document,
+   leaving the whole app displaced — header under the clock, tab bar floating
+   above a gap. dvh re-tracks the real viewport live, and a fixed body can
+   never be scrolled out of place. Every pane scrolls internally, never the
+   document. */
+@supports (height: 100dvh) {
+  html,
+  body,
+  #root {
+    height: 100dvh;
+  }
+}
+
 body {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  overflow: hidden;
   margin: 0;
   background: var(--chassis);
   color: var(--ink);
