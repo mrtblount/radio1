@@ -23,11 +23,24 @@ const browser = await chromium.launch({
   ],
 });
 
+// Mark harness identities ephemeral: the hourly sweep reclaims them and
+// everything they created (D22).
+async function markEphemeral(context) {
+  await context.addInitScript(() => {
+    try {
+      localStorage.setItem("team-radio:e2e", "1");
+    } catch {
+      /* ignore */
+    }
+  });
+}
+
 async function makeClient(name, { chatOnly = false, channel = "Security" } = {}) {
   const context = await browser.newContext({
     permissions: ["microphone"],
     viewport: { width: 375, height: 720 },
   });
+  await markEphemeral(context);
   const page = await context.newPage();
   page.on("console", (m) => {
     if (m.type() === "error") console.log(`[${name} console.error]`, m.text());
@@ -313,6 +326,224 @@ await alpha.page.waitForFunction(
 );
 check("AC9 return key brings Alpha back to Security", true);
 await alpha.page.screenshot({ path: `${SHOT_DIR}/e2e-direct-return.png` });
+
+// ── AC15/AC16: clip actions — COPY ack + transmission → task ──────────────
+console.log("— clip actions: Bravo copies + tasks Alpha's clip —");
+// Bravo is still in the Security thread from AC7 — ack the clip.
+await bravo.page.locator('[data-testid="clip-ack"]').first().click();
+// Sender confirmation: Alpha opens the Security chat and sees the COPY line.
+await alpha.page.click('[data-testid="tab-chat"]');
+await alpha.page.click('[data-testid="chat-back"]').catch(() => {});
+await alpha.page.click('[data-testid="chat-channel-Security"]');
+await alpha.page.waitForFunction(
+  (n) =>
+    [...document.querySelectorAll('[data-testid="clip-ack-names"]')].some(
+      (el) => el.textContent.includes(n),
+    ),
+  BRAVO,
+  { timeout: 10000 },
+);
+check("AC15 sender sees who copied the transmission", true);
+
+await bravo.page.locator('[data-testid="clip-task"]').first().click();
+await bravo.page.waitForFunction(
+  () =>
+    [...document.querySelectorAll('[data-testid="clip-task"]')].some((el) =>
+      el.textContent.includes("tasked"),
+    ),
+  { timeout: 8000 },
+);
+check("AC16 transmission → task confirms on the clip", true);
+await bravo.page.click('[data-testid="chat-back"]');
+await bravo.page.click('[data-testid="tab-ops"]');
+await bravo.page.waitForFunction(
+  () => {
+    const el = document.querySelector('[data-testid="dash-checklist"]');
+    if (!el) return false;
+    const m = /(\d+)\/(\d+)/.exec(el.textContent ?? "");
+    return !!m && Number(m[2]) >= 1;
+  },
+  { timeout: 10000 },
+);
+check("AC16 OPS checklist total includes the clip task", true);
+
+// ── AC19 (gate half): a sub-second press records without a transcript ─────
+console.log("— short clip: ~0.5s press records too_short —");
+await alpha.page.click('[data-testid="tab-radio"]');
+const pttShort = await alpha.page
+  .locator('[data-testid="ptt-button"]')
+  .boundingBox();
+await alpha.page.mouse.move(
+  pttShort.x + pttShort.width / 2,
+  pttShort.y + pttShort.height / 2,
+);
+await alpha.page.mouse.down();
+await alpha.page.waitForFunction(
+  () =>
+    document.querySelector('[data-testid="ptt-button"]').dataset.state ===
+    "talking",
+  { timeout: 8000 },
+);
+await alpha.page.waitForTimeout(500);
+await alpha.page.mouse.up();
+await bravo.page.click('[data-testid="tab-chat"]');
+await bravo.page.click('[data-testid="chat-back"]').catch(() => {});
+await bravo.page.click('[data-testid="chat-channel-Security"]');
+await bravo.page.waitForFunction(
+  () => document.querySelectorAll('[data-testid="clip-message"]').length >= 2,
+  { timeout: 20000 },
+);
+// too_short is terminal at insert — the newest clip never grows a transcript
+// affordance (a >=1s clip shows one immediately as "pending").
+const shortHasToggle = await bravo.page.evaluate(() => {
+  const clips = document.querySelectorAll('[data-testid="clip-message"]');
+  const last = clips[clips.length - 1];
+  return !!last.querySelector('[data-testid="clip-transcript-toggle"]');
+});
+check("AC19 sub-second clip has no transcript affordance", !shortHasToggle);
+
+// ── AC13: @mention badges ─────────────────────────────────────────────────
+console.log("— mentions: Bravo @-mentions Alpha in General —");
+await alpha.page.click('[data-testid="tab-radio"]');
+await bravo.page.click('[data-testid="chat-back"]').catch(() => {});
+await bravo.page.click('[data-testid="chat-channel-General"]');
+await bravo.page.fill(
+  '[data-testid="chat-composer"]',
+  `@${ALPHA} eyes on the west lot`,
+);
+await bravo.page.click('[data-testid="chat-send"]');
+await alpha.page.waitForSelector('[data-testid="tab-chat"] .led.on-tx', {
+  timeout: 10000,
+});
+check("AC13 mention lights the amber chat LED", true);
+await alpha.page.click('[data-testid="tab-chat"]');
+await alpha.page.click('[data-testid="chat-back"]').catch(() => {});
+await alpha.page.waitForSelector('[data-testid="mention-badge"]', {
+  timeout: 8000,
+});
+check("AC13 channel row shows the @ badge", true);
+await alpha.page.click('[data-testid="chat-channel-General"]');
+await alpha.page.waitForFunction(
+  () =>
+    !document.querySelector('[data-testid="tab-chat"] .led.on-tx') &&
+    !document.querySelector('[data-testid="mention-badge"]'),
+  { timeout: 8000 },
+);
+check("AC13 opening the channel clears the mention badge", true);
+
+// ── AC14: per-channel mute ────────────────────────────────────────────────
+console.log("— mute: Alpha mutes the test channel —");
+await alpha.page.click('[data-testid="chat-back"]');
+await alpha.page
+  .locator('[data-testid^="chat-channel-"]', { hasText: channelName })
+  .click();
+await alpha.page.click('[data-testid="alert-level-toggle"]'); // all → @
+await alpha.page.click('[data-testid="alert-level-toggle"]'); // @ → mute
+await alpha.page.waitForFunction(
+  () =>
+    document
+      .querySelector('[data-testid="alert-level-toggle"]')
+      ?.textContent.includes("muted"),
+  { timeout: 4000 },
+);
+await alpha.page.click('[data-testid="chat-back"]');
+await alpha.page.waitForSelector('[data-testid="muted-tag"]', {
+  timeout: 8000,
+});
+check("AC14 muted tag renders on the channel row", true);
+await alpha.page.click('[data-testid="tab-radio"]');
+await bravo.page.click('[data-testid="chat-back"]').catch(() => {});
+await bravo.page
+  .locator('[data-testid^="chat-channel-"]', { hasText: channelName })
+  .click();
+await bravo.page.fill('[data-testid="chat-composer"]', "quiet one");
+await bravo.page.click('[data-testid="chat-send"]');
+await bravo.page.waitForFunction(
+  () =>
+    [...document.querySelectorAll('[data-testid="chat-message"]')].some((el) =>
+      el.textContent.includes("quiet one"),
+    ),
+  { timeout: 8000 },
+);
+await alpha.page.waitForTimeout(1500);
+// No amber: a plain message in a muted channel must never read as a mention.
+const mutedAmber = await alpha.page.evaluate(
+  () => !!document.querySelector('[data-testid="tab-chat"] .led.on-tx'),
+);
+check("AC14 muted channel never goes amber on the tab", !mutedAmber);
+// Row-scoped: the muted row itself stays dark despite holding an unread
+// message. (Scoped, not the global LED — earlier runs may have left unread
+// channels for this fresh identity until the hourly sweep clears them.)
+await alpha.page.click('[data-testid="tab-chat"]');
+await alpha.page.click('[data-testid="chat-back"]').catch(() => {});
+const mutedRow = await alpha.page.evaluate((name) => {
+  const row = [
+    ...document.querySelectorAll('[data-testid^="chat-channel-"]'),
+  ].find((el) => el.textContent.includes(name));
+  if (!row) return null;
+  return {
+    muted: row.dataset.muted === "true",
+    greenBadge: !!row.querySelector('[data-testid="unread-badge"]'),
+    ledLit: !!row.querySelector(".led.on-rx, .led.on-tx"),
+  };
+}, channelName);
+check(
+  "AC14 muted row stays dark despite the unread message",
+  !!mutedRow && mutedRow.muted && !mutedRow.greenBadge && !mutedRow.ledLit,
+  JSON.stringify(mutedRow),
+);
+await alpha.page.click('[data-testid="tab-radio"]');
+
+// ── AC17: call-sign uniqueness at the gate ────────────────────────────────
+console.log("— call sign: a second device can't take an active name —");
+const dupeContext = await browser.newContext({
+  permissions: ["microphone"],
+  viewport: { width: 375, height: 720 },
+});
+await markEphemeral(dupeContext);
+const dupePage = await dupeContext.newPage();
+await dupePage.goto(URL);
+await dupePage.fill('[data-testid="name-input"]', ALPHA);
+await dupePage.click('[data-testid="channel-Security"]');
+const dupeCode = await dupePage
+  .waitForSelector('[data-testid="code-input"]', { timeout: 3000 })
+  .catch(() => null);
+if (dupeCode) await dupeCode.fill(process.env.E2E_CODE ?? "");
+await dupePage.click('[data-testid="join-button"]');
+await dupePage.waitForSelector('[data-testid="join-error"]', { timeout: 8000 });
+const dupeError = await dupePage.textContent('[data-testid="join-error"]');
+check(
+  "AC17 duplicate call sign rejected at the gate",
+  /call sign/i.test(dupeError ?? ""),
+  (dupeError ?? "").slice(0, 60),
+);
+const stillOnGate = await dupePage.evaluate(
+  () => !!document.querySelector('[data-testid="join-button"]'),
+);
+check("AC17 rejected device stays on the gate", stillOnGate);
+await dupeContext.close();
+
+// ── AC18: keep-screen-awake toggle ────────────────────────────────────────
+console.log("— wake lock: settings toggle present, persisted —");
+await charlie.page.click('[data-testid="settings-button"]');
+await charlie.page.waitForSelector('[data-testid="keep-awake-toggle"]', {
+  timeout: 8000,
+});
+const wakeInitial = await charlie.page.textContent(
+  '[data-testid="keep-awake-toggle"]',
+);
+check(
+  "AC18 keep-awake toggle present and defaults on",
+  wakeInitial?.trim() === "on",
+  wakeInitial ?? "",
+);
+await charlie.page.click('[data-testid="keep-awake-toggle"]');
+const wakeStored = await charlie.page.evaluate(() =>
+  localStorage.getItem("team-radio:keepAwake"),
+);
+check("AC18 toggle persists per device", wakeStored === "0", String(wakeStored));
+await charlie.page.click('[data-testid="keep-awake-toggle"]'); // restore default
+await charlie.page.click('button:has-text("close")');
 
 // ── AC10: AI feature flag hides/shows the OPS tab live ────────────────────
 if (process.env.E2E_ADMIN_CODE) {

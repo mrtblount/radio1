@@ -55,6 +55,8 @@ export default defineSchema({
       dashOpen: v.optional(v.boolean()),
       notifyEnabled: v.optional(v.boolean()),
     }),
+    // Test-run identities (e2e): swept with their content after an hour.
+    ephemeral: v.optional(v.boolean()),
   })
     .index("by_userId", ["userId"])
     .index("by_lastActiveAt", ["lastActiveAt"]),
@@ -90,14 +92,22 @@ export default defineSchema({
     ),
     body: v.string(),
     clipId: v.optional(v.id("transmissions")),
+    // @mentions resolved at send time (names denormalized for rendering).
+    mentions: v.optional(
+      v.array(v.object({ userId: v.string(), name: v.string() })),
+    ),
     createdAt: v.number(),
   }).index("by_channel", ["channelKey", "createdAt"]),
 
   // Read cursors → unread badges (covers text and missed clips alike).
+  // Also carries the per-channel alert level (same (user, channel) key).
   reads: defineTable({
     userId: v.string(),
     channelKey: v.string(),
     lastReadAt: v.number(),
+    alertLevel: v.optional(
+      v.union(v.literal("all"), v.literal("mentions"), v.literal("mute")),
+    ),
   }).index("by_user_channel", ["userId", "channelKey"]),
 
   // Typing beacons (self-expiring via `until`).
@@ -124,9 +134,25 @@ export default defineSchema({
       v.literal("pending"),
       v.literal("done"),
       v.literal("failed"),
-      v.literal("skipped"),
+      v.literal("skipped"), // no GROQ_API_KEY configured
+      v.literal("too_short"), // < 1s — short bursts hallucinate (SPEC 9.2.4)
     ),
-  }).index("by_channel", ["channelKey", "startedAt"]),
+    // Derived from Whisper segment stats; "low" renders a LOW CONF tag.
+    transcriptConfidence: v.optional(
+      v.union(v.literal("ok"), v.literal("low")),
+    ),
+    // One-tap COPY acks (D24) — tiny per-team arrays, denormalized names.
+    acks: v.optional(
+      v.array(
+        v.object({ userId: v.string(), name: v.string(), at: v.number() }),
+      ),
+    ),
+  })
+    .index("by_channel", ["channelKey", "startedAt"])
+    .searchIndex("search_transcript", {
+      searchField: "transcript",
+      filterFields: ["channelKey"],
+    }),
 
   // Direct-PTT "ring": tells the callee's radio to auto-switch to the DM
   // channel so the call is live. Self-expiring; swept.
@@ -176,6 +202,8 @@ export default defineSchema({
     done: v.boolean(),
     doneByName: v.optional(v.string()),
     createdBy: v.string(),
+    // Provenance when created from a transmission clip (D24); dedupe key.
+    sourceTransmissionId: v.optional(v.id("transmissions")),
   }).index("by_date", ["date"]),
 
   taskTemplate: defineTable({

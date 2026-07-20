@@ -2,7 +2,9 @@ import { useCallback, useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import {
+  forceGate,
   getUserId,
+  isEphemeralSession,
   isIdentified,
   loadAccessCode,
   loadDisplayName,
@@ -14,6 +16,11 @@ export interface Identity {
   name: string;
   code: string;
 }
+
+/** Exact copy shown for a call-sign conflict — App matches on it to tell a
+ *  lost gate race apart from transient failures. */
+export const NAME_TAKEN_MSG =
+  "That call sign is in use on this team. Pick another.";
 
 /**
  * Device identity: userId is minted locally; `identify` registers/refreshes
@@ -37,8 +44,10 @@ export function useIdentity() {
           userId: getUserId(),
           name,
           accessCode: code || undefined,
+          ephemeral: isEphemeralSession() || undefined,
         });
         if (!res.ok) {
+          if (res.reason === "name-taken") return NAME_TAKEN_MSG;
           return res.reason === "code-invalid"
             ? "That access code isn't right. Check with your team lead and try again."
             : "This team requires an access code — ask your team lead for it.";
@@ -53,5 +62,12 @@ export function useIdentity() {
     [upsert],
   );
 
-  return { identified, identity, identify };
+  /** Server refused our persisted identity (e.g. call sign taken while we
+   *  were offline): drop back to the gate, this session and the next. */
+  const revoke = useCallback(() => {
+    forceGate();
+    setIdentified(false);
+  }, []);
+
+  return { identified, identity, identify, revoke };
 }

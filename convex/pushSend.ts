@@ -61,6 +61,18 @@ async function deliver(
   return dead;
 }
 
+/** Deliver every recipient group in a plan (regular + mention pings, D23). */
+async function deliverGroups(
+  groups: { subs: SubRow[]; payload: Payload }[],
+): Promise<string[]> {
+  const dead: string[] = [];
+  for (const group of groups) {
+    if (group.subs.length === 0) continue;
+    dead.push(...(await deliver(group.subs, group.payload)));
+  }
+  return dead;
+}
+
 export const notifyMessage = internalAction({
   args: { messageId: v.id("messages") },
   handler: async (ctx, { messageId }) => {
@@ -69,8 +81,8 @@ export const notifyMessage = internalAction({
     const plan = await ctx.runQuery(internal.push.messageRecipients, {
       messageId,
     });
-    if (!plan || plan.subs.length === 0) return;
-    const dead = await deliver(plan.subs as SubRow[], plan.payload);
+    if (!plan) return;
+    const dead = await deliverGroups(plan.groups as never);
     if (dead.length) {
       await ctx.runMutation(internal.push.prune, { ids: dead as never });
     }
@@ -85,8 +97,8 @@ export const notifyClip = internalAction({
     const plan = await ctx.runQuery(internal.push.clipRecipients, {
       transmissionId,
     });
-    if (!plan || plan.subs.length === 0) return;
-    const dead = await deliver(plan.subs as SubRow[], plan.payload);
+    if (!plan) return;
+    const dead = await deliverGroups(plan.groups as never);
     if (dead.length) {
       await ctx.runMutation(internal.push.prune, { ids: dead as never });
     }

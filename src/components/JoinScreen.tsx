@@ -9,17 +9,45 @@ interface Props {
   onJoin: (name: string, channel: string, accessCode: string) => void;
   /** Optional: pass the gate without going on the radio (text chat only). */
   onChatOnly?: (name: string, accessCode: string) => Promise<string | null>;
+  /** Pre-flight call-sign availability (D22). Resolve false = name in use. */
+  checkName?: (name: string, accessCode: string) => Promise<boolean>;
 }
 
-export function JoinScreen({ joining, joinError, onJoin, onChatOnly }: Props) {
+export function JoinScreen({
+  joining,
+  joinError,
+  onJoin,
+  onChatOnly,
+  checkName,
+}: Props) {
   const [name, setName] = useState(loadDisplayName);
   const [channel, setChannel] = useState<string>(CHANNELS[0]);
   const [code, setCode] = useState(loadAccessCode);
   const [codeRequired, setCodeRequired] = useState(false);
   const [chatOnlyBusy, setChatOnlyBusy] = useState(false);
   const [chatOnlyError, setChatOnlyError] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
   const ready =
     name.trim().length >= 2 && (!codeRequired || code.trim().length > 0);
+
+  const guardName = async (): Promise<boolean> => {
+    if (!checkName) return true;
+    setChecking(true);
+    try {
+      const ok = await checkName(name.trim(), code.trim());
+      if (!ok) {
+        setNameError("That call sign is in use on this team. Pick another.");
+        return false;
+      }
+      return true;
+    } catch {
+      // Offline or bad code — let the join path surface the real error.
+      return true;
+    } finally {
+      setChecking(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -131,21 +159,26 @@ export function JoinScreen({ joining, joinError, onJoin, onChatOnly }: Props) {
         </>
       )}
 
-      {(joinError || chatOnlyError) && (
+      {(joinError || chatOnlyError || nameError) && (
         <p
           data-testid="join-error"
           className="mb-4 rounded-md px-4 py-3 text-sm"
           style={{ background: "rgba(255,81,71,0.1)", border: "1px solid var(--alert)", color: "var(--ink)" }}
         >
-          {joinError ?? chatOnlyError}
+          {nameError ?? joinError ?? chatOnlyError}
         </p>
       )}
 
       <button
         type="button"
         data-testid="join-button"
-        disabled={!ready || joining}
-        onClick={() => onJoin(name.trim(), channel, code.trim())}
+        disabled={!ready || joining || checking}
+        onClick={() => {
+          setNameError(null);
+          void guardName().then((ok) => {
+            if (ok) onJoin(name.trim(), channel, code.trim());
+          });
+        }}
         className="display-type mb-4 w-full rounded-md py-4 font-bold"
         style={{
           fontSize: "1.3rem",
@@ -155,7 +188,7 @@ export function JoinScreen({ joining, joinError, onJoin, onChatOnly }: Props) {
           transition: "background 120ms ease",
         }}
       >
-        {joining ? "KEYING IN…" : "GO ON DUTY"}
+        {joining || checking ? "KEYING IN…" : "GO ON DUTY"}
       </button>
 
       {onChatOnly && (
@@ -166,6 +199,7 @@ export function JoinScreen({ joining, joinError, onJoin, onChatOnly }: Props) {
           onClick={() => {
             setChatOnlyBusy(true);
             setChatOnlyError(null);
+            setNameError(null);
             void onChatOnly(name.trim(), code.trim()).then((err) => {
               setChatOnlyBusy(false);
               if (err) setChatOnlyError(err);

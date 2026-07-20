@@ -5,6 +5,7 @@ import {
   type MutationCtx,
 } from "./_generated/server";
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
 import { assertCode, assertAdminCode } from "./access";
 
 /** Team-local date key (ET — both pilot teams are Eastern). */
@@ -97,7 +98,12 @@ export const add = mutation({
   },
 });
 
-async function addTask(ctx: MutationCtx, label: string, createdBy: string) {
+async function addTask(
+  ctx: MutationCtx,
+  label: string,
+  createdBy: string,
+  sourceTransmissionId?: Id<"transmissions">,
+) {
   const clean = label.trim().slice(0, 120);
   if (clean.length < 2) throw new Error("Task label too short");
   const date = todayKey();
@@ -112,9 +118,57 @@ async function addTask(ctx: MutationCtx, label: string, createdBy: string) {
     order: maxOrder + 1,
     done: false,
     createdBy,
+    ...(sourceTransmissionId ? { sourceTransmissionId } : {}),
   });
   return clean;
 }
+
+/**
+ * Transmission → checklist item (D24). Label comes from the transcript when
+ * there is one; DM clips are refused — their transcripts must never surface
+ * on the shared checklist. Dedupes on provenance so a double-tap can't twin.
+ */
+export const addFromTransmission = mutation({
+  args: {
+    transmissionId: v.id("transmissions"),
+    userId: v.string(),
+    accessCode: v.optional(v.string()),
+  },
+  handler: async (ctx, { transmissionId, userId, accessCode }) => {
+    assertCode(accessCode);
+    const clip = await ctx.db.get(transmissionId);
+    if (!clip) throw new Error("No such transmission");
+    const channel = await ctx.db
+      .query("channels")
+      .withIndex("by_key", (q) => q.eq("key", clip.channelKey))
+      .unique();
+    if (channel?.kind === "dm") {
+      throw new Error("Direct-line clips stay private");
+    }
+    const today = await ctx.db
+      .query("tasks")
+      .withIndex("by_date", (q) => q.eq("date", todayKey()))
+      .collect();
+    const dupe = today.find((t) => t.sourceTransmissionId === transmissionId);
+    if (dupe) return { label: dupe.label, deduped: true as const };
+
+    const transcript =
+      clip.transcriptStatus === "done" ? (clip.transcript ?? "").trim() : "";
+    const clock = new Date(clip.startedAt).toLocaleTimeString("en-US", {
+      timeZone: "America/New_York",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+    const label =
+      transcript.length >= 2
+        ? transcript.slice(0, 100)
+        : `Follow up: clip from ${clip.name} at ${clock}`;
+    // createdBy = userId (not display name) so the D22 purge cascade can
+    // match it exactly; no UI surface renders task.createdBy.
+    const clean = await addTask(ctx, label, userId, transmissionId);
+    return { label: clean, deduped: false as const };
+  },
+});
 
 // ── Checklist template (admin) ─────────────────────────────────────────────
 

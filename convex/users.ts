@@ -1,17 +1,43 @@
-import { mutation, query } from "./_generated/server";
+import { mutation, query, type QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { checkCode, assertCode } from "./access";
 
 /** A user counts as "in the app right now" within this window. */
 export const ACTIVE_MS = 45_000;
 
+/** A call sign stays reserved this long after its holder was last active (D22). */
+export const NAME_HOLD_MS = 7 * 24 * 60 * 60_000;
+
+/** The directory hides users inactive longer than this (SPEC I5, §9.3). */
+export const DIRECTORY_MS = 30 * 24 * 60 * 60_000;
+
+const normalizeName = (name: string) => name.trim().toLowerCase();
+
+/** Another device actively holds this call sign (case-insensitive). */
+async function nameConflict(
+  ctx: QueryCtx,
+  userId: string,
+  name: string,
+): Promise<boolean> {
+  const wanted = normalizeName(name);
+  const cutoff = Date.now() - NAME_HOLD_MS;
+  const all = await ctx.db.query("users").collect();
+  return all.some(
+    (u) =>
+      u.userId !== userId &&
+      normalizeName(u.name) === wanted &&
+      u.lastActiveAt > cutoff,
+  );
+}
+
 export const upsert = mutation({
   args: {
     userId: v.string(),
     name: v.string(),
     accessCode: v.optional(v.string()),
+    ephemeral: v.optional(v.boolean()),
   },
-  handler: async (ctx, { userId, name, accessCode }) => {
+  handler: async (ctx, { userId, name, accessCode, ephemeral }) => {
     const gate = checkCode(accessCode);
     if (gate !== "ok") {
       return { ok: false as const, reason: `code-${gate}` as const };
@@ -21,6 +47,11 @@ export const upsert = mutation({
       .query("users")
       .withIndex("by_userId", (q) => q.eq("userId", userId))
       .unique();
+    const renaming =
+      existing && normalizeName(existing.name) !== normalizeName(name);
+    if ((!existing || renaming) && (await nameConflict(ctx, userId, name))) {
+      return { ok: false as const, reason: "name-taken" as const };
+    }
     if (existing) {
       await ctx.db.patch(existing._id, { name, lastActiveAt: now });
     } else {
@@ -30,9 +61,23 @@ export const upsert = mutation({
         createdAt: now,
         lastActiveAt: now,
         prefs: {},
+        ...(ephemeral ? { ephemeral: true } : {}),
       });
     }
     return { ok: true as const };
+  },
+});
+
+/** Gate pre-check so the join screen can refuse a taken call sign up front. */
+export const nameAvailable = query({
+  args: {
+    userId: v.string(),
+    name: v.string(),
+    accessCode: v.optional(v.string()),
+  },
+  handler: async (ctx, { userId, name, accessCode }) => {
+    assertCode(accessCode);
+    return !(await nameConflict(ctx, userId, name));
   },
 });
 
@@ -92,6 +137,8 @@ export const list = query({
       }
     }
     return users
+      // Durable identity is not presence: stale rows are hidden, never shown.
+      .filter((u) => u.lastActiveAt > now - DIRECTORY_MS)
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((u) => ({
         userId: u.userId,

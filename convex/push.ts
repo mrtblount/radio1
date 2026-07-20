@@ -2,6 +2,7 @@ import {
   internalMutation,
   internalQuery,
   mutation,
+  type QueryCtx,
 } from "./_generated/server";
 import { v } from "convex/values";
 import { assertCode } from "./access";
@@ -66,7 +67,44 @@ export const unsubscribe = mutation({
   },
 });
 
-/** Recipients for a chat message per PLAN D13. */
+async function alertLevelFor(
+  ctx: QueryCtx,
+  userId: string,
+  channelKey: string,
+): Promise<"all" | "mentions" | "mute"> {
+  const read = await ctx.db
+    .query("reads")
+    .withIndex("by_user_channel", (q) =>
+      q.eq("userId", userId).eq("channelKey", channelKey),
+    )
+    .unique();
+  return read?.alertLevel ?? "all";
+}
+
+async function subsFor(ctx: QueryCtx, userIds: string[]) {
+  const subs = [];
+  for (const uid of userIds) {
+    const rows = await ctx.db
+      .query("pushSubs")
+      .withIndex("by_user", (q) => q.eq("userId", uid))
+      .collect();
+    subs.push(...rows);
+  }
+  return subs.map((s) => ({
+    id: s._id,
+    endpoint: s.endpoint,
+    p256dh: s.p256dh,
+    auth: s.auth,
+  }));
+}
+
+/**
+ * Recipients for a chat message per PLAN D13, amended by D23: each
+ * recipient's per-channel alert level filters server-side (the SW must show
+ * whatever arrives), and mentions ride the always path with their own
+ * notification group (distinct tag + title) so plain messages can't coalesce
+ * over them.
+ */
 export const messageRecipients = internalQuery({
   args: { messageId: v.id("messages") },
   handler: async (ctx, { messageId }) => {
@@ -82,45 +120,61 @@ export const messageRecipients = internalQuery({
     const users = await ctx.db.query("users").collect();
     const isDm = channel.kind === "dm";
     const always = isDm || message.kind === "announce";
+    const mentioned = new Set((message.mentions ?? []).map((m) => m.userId));
 
-    const userIds = users
-      .filter((u) => u.userId !== message.userId)
-      .filter((u) => !isDm || channel.dmMembers?.includes(u.userId))
+    const regular: string[] = [];
+    const pinged: string[] = [];
+    for (const u of users) {
+      if (u.userId === message.userId) continue;
+      if (isDm && !channel.dmMembers?.includes(u.userId)) continue;
+      const level = await alertLevelFor(ctx, u.userId, message.channelKey);
+      // Mute means quiet — even for mentions; the amber badge still shows.
+      if (level === "mute") continue;
+      if (mentioned.has(u.userId)) {
+        pinged.push(u.userId); // no activity suppression for mentions
+        continue;
+      }
+      // "mentions" filters plain team chatter only — DMs and announcements
+      // keep v2 behavior unless explicitly muted (D23).
+      if (level === "mentions" && !always) continue;
       // Team-channel chatter doesn't ping people who are looking at the app.
-      .filter((u) => always || u.lastActiveAt < now - ACTIVE_MS)
-      .map((u) => u.userId);
-
-    const subs = [];
-    for (const uid of userIds) {
-      const rows = await ctx.db
-        .query("pushSubs")
-        .withIndex("by_user", (q) => q.eq("userId", uid))
-        .collect();
-      subs.push(...rows);
+      if (!always && u.lastActiveAt >= now - ACTIVE_MS) continue;
+      regular.push(u.userId);
     }
 
     const senderName = message.name;
     const channelLabel = isDm ? senderName : channel.name;
+    const body =
+      message.kind === "clip"
+        ? "Missed transmission — tap to listen"
+        : message.body.slice(0, 140);
+    const url = `/#chat/${encodeURIComponent(message.channelKey)}`;
+
     return {
-      subs: subs.map((s) => ({
-        id: s._id,
-        endpoint: s.endpoint,
-        p256dh: s.p256dh,
-        auth: s.auth,
-      })),
-      payload: {
-        title: isDm
-          ? `${senderName} (direct)`
-          : message.kind === "announce"
-            ? `Announcement · ${channelLabel}`
-            : `${senderName} · ${channelLabel}`,
-        body:
-          message.kind === "clip"
-            ? "Missed transmission — tap to listen"
-            : message.body.slice(0, 140),
-        tag: message.channelKey,
-        url: `/#chat/${encodeURIComponent(message.channelKey)}`,
-      },
+      groups: [
+        {
+          subs: await subsFor(ctx, regular),
+          payload: {
+            title: isDm
+              ? `${senderName} (direct)`
+              : message.kind === "announce"
+                ? `Announcement · ${channelLabel}`
+                : `${senderName} · ${channelLabel}`,
+            body,
+            tag: message.channelKey,
+            url,
+          },
+        },
+        {
+          subs: await subsFor(ctx, pinged),
+          payload: {
+            title: `${senderName} mentioned you · ${channelLabel}`,
+            body,
+            tag: `${message.channelKey}:m`,
+            url,
+          },
+        },
+      ],
     };
   },
 });
@@ -147,36 +201,33 @@ export const clipRecipients = internalQuery({
     );
     const isDm = channel?.kind === "dm";
 
-    const userIds = users
-      .filter((u) => u.userId !== clip.userId)
-      .filter((u) => !isDm || channel?.dmMembers?.includes(u.userId))
-      .filter((u) => !liveListeners.has(u.userId))
-      .map((u) => u.userId);
-
-    const subs = [];
-    for (const uid of userIds) {
-      const rows = await ctx.db
-        .query("pushSubs")
-        .withIndex("by_user", (q) => q.eq("userId", uid))
-        .collect();
-      subs.push(...rows);
+    const userIds: string[] = [];
+    for (const u of users) {
+      if (u.userId === clip.userId) continue;
+      if (isDm && !channel?.dmMembers?.includes(u.userId)) continue;
+      if (liveListeners.has(u.userId)) continue;
+      const level = await alertLevelFor(ctx, u.userId, clip.channelKey);
+      // Mute silences clips; "mentions" silences only team-channel clips —
+      // a missed DIRECT call still pushes unless explicitly muted (D23).
+      if (level === "mute") continue;
+      if (level === "mentions" && !isDm) continue;
+      userIds.push(u.userId);
     }
 
     return {
-      subs: subs.map((s) => ({
-        id: s._id,
-        endpoint: s.endpoint,
-        p256dh: s.p256dh,
-        auth: s.auth,
-      })),
-      payload: {
-        title: isDm
-          ? `${clip.name} (direct radio)`
-          : `${clip.name} · ${channel?.name ?? clip.channelKey}`,
-        body: "Missed transmission — tap to listen",
-        tag: clip.channelKey,
-        url: `/#chat/${encodeURIComponent(clip.channelKey)}`,
-      },
+      groups: [
+        {
+          subs: await subsFor(ctx, userIds),
+          payload: {
+            title: isDm
+              ? `${clip.name} (direct radio)`
+              : `${clip.name} · ${channel?.name ?? clip.channelKey}`,
+            body: "Missed transmission — tap to listen",
+            tag: clip.channelKey,
+            url: `/#chat/${encodeURIComponent(clip.channelKey)}`,
+          },
+        },
+      ],
     };
   },
 });

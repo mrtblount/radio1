@@ -1,9 +1,53 @@
 # TASKS — Radio One Platform v2 (fusion build)
 
-> Status: v2 — decomposed 2026-07-17 from SPEC v2 + PLAN v2. Executed in phases;
-> tasks within a phase may parallelize where files don't overlap.
+> Status: v2.1 — Phases A–G (fusion build) all DONE, merged 2026-07-17 (PR #1).
+> Phase H decomposed 2026-07-18 from SPEC §9 + PLAN §11 (field-feedback batch,
+> branch field-feedback-r1).
 > Rule: after any task touching mesh/floor/signaling/useRadio, `npm run e2e` must pass.
 > v1 TASKS (all 18 DONE) archived in git history.
+
+## Phase H — Field-feedback batch (SPEC §9, PLAN D18–D24)
+
+- [x] H1. Schema delta (PLAN §11 table): users.ephemeral, messages.mentions,
+  reads.alertLevel, transmissions acks/confidence/too_short/searchIndex,
+  tasks.sourceTransmissionId. Push to dev.
+- [x] H2. User hygiene backend (D22): upsert NAME_HOLD enforcement +
+  nameAvailable + list 30d filter; maintenance sweepEphemeralUsers (+ hourly
+  cron) + purgeUsers; identity/useIdentity ephemeral pass-through.
+- [x] H3. Channel truth (D21): teamChannelRows/visibleChannelKeys helpers,
+  converge the 6 consumers, ctxChatActivity keeps quiet channels,
+  ctxTransmissions gains archived filter.
+- [x] H4. STT hardening (D19): transcribe language pin + verbose_json +
+  confidence + stuck-pending fix; record <1s too_short gate;
+  getForTranscription durationMs.
+- [x] H5. Agent memory + channel tools (D20/D21): ctxSearchTransmissions +
+  ctxChannels internalQueries; search_transmissions + list_channels tools,
+  narration, execTool cases, prompt rules; get_transmissions truncation.
+- [x] H6. Mentions + alert levels backend (D23): send parses mentions,
+  setAlertLevel, unreadCount → {unread, mentionUnread}, channels.list rows,
+  unreadSummary {total, mentions}, push recipient filters + mention tag.
+- [x] H7. Acks + task-from-clip backend (D24): transmissions.ack, clip/
+  forChannel return acks+confidence, tasks.addFromTransmission (DM-reject,
+  dedupe).
+- [x] H8. Wake-lock control (D18): useRadio pref gate + setKeepAwake,
+  keepAwake storage helper, SettingsSheet card + honest hint. e2e must pass
+  (touches useRadio).
+- [x] H9. Chat UI (D23): Composer @-autocomplete, MessageRow mention highlight,
+  ChatThread header bell (ALL→@→MUTE), ChannelList amber @badges + muted
+  styling, TabBar amber mention LED, App wiring.
+- [x] H10. Clip UI (D19/D24): ClipMessage second row — COPY + ack names +
+  → TASK + LOW CONF tag; 320px check.
+- [x] H11. JoinScreen call-sign conflict UX (D22): nameAvailable pre-check on
+  both radio and chat-only paths, error copy, keep testids.
+- [x] H12. e2e: both suites set team-radio:e2e + ptt suite run-suffixed names;
+  new checks AC13–AC18 (mention badge, mute, ack, task, name conflict, wake
+  toggle presence); keep AC1–AC10 green.
+- [x] H13. Verification: npm run build, both suites green, 320px viewport pass
+  on changed surfaces, dev-data purge executed + verified, prod data inspected.
+- [x] H14. Adversarial review workflow over the full diff; fix confirmed
+  findings; re-run gates.
+- [x] H15. Push branch, open PR with verification report (NO merge). Update
+  CLAUDE.md env list (STT_LANGUAGE) + INTEGRATION.md cross-link if touched.
 
 ## Phase A — Foundation (identity, shared client, shell)
 

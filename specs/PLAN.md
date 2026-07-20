@@ -311,6 +311,173 @@ and it's explicitly asynchronous with a visible working state.
 
 ---
 
+## 11. v2.1 — Field-feedback decisions (2026-07-18, SPEC §9)
+
+### D18 — Wake lock stays owned by useRadio, gated by a device pref
+One sentinel owner. `requestWakeLock` (the single choke point both the join
+path and the visibility re-acquire flow through) gains a pref check;
+`useRadio` exposes `setKeepAwake(on)` so the Settings toggle takes effect
+live (request if joined / release immediately). Pref = localStorage
+`team-radio:keepAwake` via the session.ts try/catch helper idiom, **default ON
+when unset** (today's behavior; OFF-default would silently regress every pilot
+device and falsify NATIVE.md's honesty claims). Server prefs rejected: wake
+lock is per-device hardware behavior. Settings card copies the Alerts-card
+row/toggle/hint markup; hint states the locked-screen limit honestly.
+Scope stays on-duty (join→leave) — widening to "app open" would move the lock
+out of useRadio and was assessed as risk without user benefit (chat-only usage
+doesn't need a hot screen).
+
+### D19 — STT hardening: language pin, 1s server gate, derived confidence
+`transcribe.run` sends `language` (env `STT_LANGUAGE`, default "en" — pinning
+is an explicit English-team assumption, per-deployment overridable) and
+`response_format: "verbose_json"`, parsed defensively (text may exist while
+segments is absent → no confidence recorded). Confidence heuristic: LOW iff
+duration-weighted mean segment `avg_logprob` < −0.6 OR max `no_speech_prob`
+> 0.5; stored as `transcriptConfidence: "ok" | "low"`, rendered as an amber
+LOW CONF tag in ClipMessage and surfaced to the agent as "(low confidence)".
+Duration gate lives in `transmissions.record` (the only scheduler of the
+transcribe action): `durationMs < 1000` → insert with new terminal status
+`"too_short"`, don't schedule; `notifyClip` unaffected. Belt-and-braces:
+`getForTranscription` returns durationMs and the action re-checks. Also fixed:
+the stuck-`pending` hole (missing row/URL now patches `failed` instead of
+returning silently). Client MIN_CLIP_MS=400 drop unchanged (different
+semantics: no upload at all).
+
+### D20 — Transcripts become agent memory via a search index + tool
+`transmissions` gains `searchIndex("search_transcript", { searchField:
+"transcript", filterFields: ["channelKey"] })`. New internalQuery
+`ai.ctxSearchTransmissions(userId, query, channel?, hours?)`: full-text search,
+post-filtered by time and the caller's visible-channel set (the v2 DM privacy
+contract verbatim), capped at 20 hits with transcripts truncated to ~300 chars.
+New tool `search_transmissions` (+ STATUS_LABELS narration + execTool case
+passing userId). Token guard extended to `get_transmissions` too: transcripts
+truncated to 300 chars there (they were the one unguarded size dimension).
+System prompt gains a rule directing "what did X say about Y" to the search
+tool.
+
+### D21 — One channel truth: shared helpers + list_channels tool
+New exported helpers in convex/channels.ts (the established cross-module
+helper idiom): `teamChannelRows(ctx)` (kind=team && !archived, seeded-order
+sort — owns the predicate + the sort that were previously duplicated 5×) and
+`visibleChannelKeys(ctx, userId)` (team + caller's DMs). Converged consumers:
+channels.list, listForRadio, ai.dashboard, ai.ctxTransmissions,
+ai.ctxChatActivity, messages.unreadSummary. Two behavior changes, deliberate:
+(a) ctxChatActivity now returns quiet channels with zero counts instead of
+dropping them (the P3 root cause); (b) ctxTransmissions gains the archived
+filter it was missing (inconsistency, flagged not absorbed). New agent tool
+`list_channels` wraps the same helper (name, kind, official/postRestricted,
++ the caller's DMs); prompt rule: channel counts/lists come from list_channels,
+and any exclusion (archived, DMs) must be stated in the answer.
+
+### D22 — User hygiene: enforce, hide, mark, sweep, purge
+Five arms, no merging (merge-by-name can fuse two real people; DM keys embed
+userIds — re-keying is a minefield with zero payoff for what is test debris):
+1. **Enforce**: `users.upsert` rejects an insert or rename when another row
+   holds the same normalized name (trim/casefold) and was active within 7 days
+   (NAME_HOLD). New `users.nameAvailable` query lets JoinScreen pre-check
+   before joining radio; upsert stays the authoritative guard (Convex
+   serializable mutations make it race-safe). Gate shows "CALL SIGN IN USE".
+   7 days chosen for event-week cadence: a stale name (retired device) is
+   reclaimable as a NEW row; the old row is hidden by (2) and eventually has
+   no live footprint.
+2. **Hide**: `users.list` (the directory) filters to lastActiveAt within 30
+   days (SPEC I5 interpretation). Rows are hidden, never auto-deleted —
+   durable identity is not presence.
+3. **Mark**: users gain `ephemeral?: boolean`; identify() sends it when
+   localStorage `team-radio:e2e` is set; both e2e suites set that key via
+   addInitScript. The ptt suite also adopts run-suffixed names
+   (`Alpha-<run>` still satisfies its "Alpha" banner assertion) so uniqueness
+   enforcement can't collide across runs.
+4. **Sweep**: hourly cron `sweepEphemeralUsers`: ephemeral users inactive >1h
+   are deleted WITH their content (messages, transmissions + storage blobs,
+   reads, pushSubs, aiMessages, typing, channels they created and DM channels
+   they belong to, incl. those channels' messages/reads). The 1h grace keeps
+   in-flight e2e runs intact.
+5. **Purge**: one-off `maintenance.purgeUsers({ userIds })` with an explicit
+   id list (no fuzzy name-pattern deletes); candidate list produced by a
+   read-only query and reviewed before running. Run on dev now; prod only
+   after inspecting its data (report either way in the PR).
+Note: the feared ensureSeeded double-insert race is a non-issue — Convex
+mutations are serializable transactions; recorded here so it isn't
+"fixed" later.
+
+### D23 — Mentions + per-channel alert levels
+- **Storage**: `messages.mentions?: [{userId, name}]` (names denormalized at
+  write time, the house convention — lets MessageRow highlight without joins).
+  Parsed server-side in `messages.send` (the body is clamped there and push
+  targeting reads only the stored row): case-insensitive match of `@` +
+  member name, longest-name-first, against the users table.
+- **Alert level**: `reads.alertLevel?: "all" | "mentions" | "mute"` — the
+  reads row already has exactly the (userId, channelKey) key + index; a
+  separate table would duplicate it. `messages.setAlertLevel` get-or-creates
+  the row (lastReadAt 0 on create — identical semantics to no row). Set from
+  a bell control in the ChatThread header cycling ALL → @ → MUTE.
+- **Counting**: `unreadCount` extends to `{unread, mentionUnread}` in the same
+  post-cursor window scan (inherits the take(100) cap). channels.list rows
+  gain mentionUnread + alertLevel; `unreadSummary` returns `{total, mentions}`
+  where total excludes muted channels and mentions counts ALL channels (a
+  mention in a muted channel still badges — Slack-proven semantics).
+- **Badges (I8 grammar)**: green = unread (existing), **amber = mentioned**
+  ("requires you", matching the amber-TX action language). Chat tab LED goes
+  amber when mentions>0 else green when total>0; channel rows show an amber
+  `@n` badge; muted rows: dimmed, MUTED microtext, no green LED/count.
+- **Push (D13 amended)**: recipients' alert level filters server-side (the SW
+  must show whatever arrives — client filtering is a correctness bug):
+  mute → no push from that channel (messages OR clips), even when mentioned
+  (mute means quiet; the amber badge still shows). mentions → push only when
+  mentioned; clip pushes suppressed (clips can't mention). Mentioned + not
+  muted → rides the `always` path (bypasses the 45s activity suppression, like
+  DMs) and gets a distinct notification tag (`<channel>:m`) so a later plain
+  message can't coalesce over it. DMs/announcements keep v2 behavior unless
+  explicitly muted.
+- **Composer**: minimal @-autocomplete — typing `@…` at the caret shows up to
+  5 active members; tap inserts. No arrow-key machinery (mobile-first).
+
+### D24 — COPY acks + transmission→task
+- **Acks**: inline `acks?: [{userId, name, at}]` on the transmissions row (not
+  a table): both surfaces already hold a live per-clip `transmissions.clip`
+  subscription, teams are 5–20, and Convex serializable mutations make
+  check-then-append race-safe. `transmissions.ack` follows the full guard
+  stack (assertCode + assertClipAccess + name lookup), toggles idempotently
+  per userId. Senders can't ack their own clip. Served on `clip` and
+  `forChannel`; ackedByMe derived client-side.
+- **UI**: ClipMessage gains a compact second row (the control row is full at
+  320px): COPY button (amber fill when acked-by-me — outbound act = TX amber)
+  + "COPY: name · name" silkscreen line + "→ TASK". A second row also keeps
+  → TASK reachable when there's no transcript panel to expand.
+- **Task**: `tasks.addFromTransmission(transmissionId, userId)`: guard stack,
+  **rejects DM clips** (private transcript must not leak onto the team
+  checklist — SPEC 9.2.3), label = transcript sliced ~100 chars (under the
+  120 cap) or "Follow up: clip from «name» «clock»", sets
+  `tasks.sourceTransmissionId` and dedupes on it within today. Tasks land on
+  todayKey (ET) regardless of clip time — stated limitation of the daily
+  checklist model. DashStrip needs zero changes (reactive).
+
+### Schema delta (all additive — safe migration)
+
+| Table | Change |
+|---|---|
+| users | + `ephemeral?: boolean` |
+| messages | + `mentions?: [{userId, name}]` |
+| reads | + `alertLevel?: "all"\|"mentions"\|"mute"` |
+| transmissions | + `acks?: [{userId,name,at}]` · + `transcriptConfidence?: "ok"\|"low"` · transcriptStatus + `"too_short"` · + searchIndex `search_transcript` |
+| tasks | + `sourceTransmissionId?: Id<transmissions>` |
+
+### Function inventory delta
+
+| Module | Change |
+|---|---|
+| users | upsert enforces NAME_HOLD · + `nameAvailable` · list hides >30d-stale |
+| channels | + helpers `teamChannelRows` / `visibleChannelKeys` · list rows + mentionUnread/alertLevel |
+| messages | send parses mentions · + `setAlertLevel` · unreadSummary → {total, mentions} |
+| transmissions | record gates <1s · + `ack` · clip/forChannel + acks/confidence |
+| transcribe | language pin · verbose_json confidence · stuck-pending fix |
+| ai | + `ctxSearchTransmissions` · + `ctxChannels` · ctxChatActivity keeps quiet channels · transcript truncation |
+| aiAgent | + tools `search_transmissions`, `list_channels` + narration + prompt rules |
+| tasks | + `addFromTransmission` |
+| push | recipient filters respect alertLevel; mention pushes always + distinct tag |
+| maintenance | + `sweepEphemeralUsers` (hourly cron) · + `purgeUsers(userIds)` one-off |
+
 ## Appendix: v1 decisions retained (D1–D7)
 
 D1 pre-established mesh + track toggle (instant PTT) · D2 server-arbitrated floor

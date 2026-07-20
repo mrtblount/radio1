@@ -23,6 +23,15 @@ async function makeClient(name) {
     permissions: ["microphone"],
     viewport: { width: 375, height: 720 },
   });
+  // Mark this identity ephemeral so the hourly sweep reclaims it + its
+  // content (D22) — every fresh context otherwise leaves a permanent user row.
+  await context.addInitScript(() => {
+    try {
+      localStorage.setItem("team-radio:e2e", "1");
+    } catch {
+      /* ignore */
+    }
+  });
   const page = await context.newPage();
   page.on("console", (m) => {
     if (m.type() === "error") console.log(`[${name} console.error]`, m.text());
@@ -80,8 +89,11 @@ async function audioEnergy(page, ms) {
 }
 
 console.log("— joining two clients on channel Security —");
-const alpha = await makeClient("Alpha");
-const bravo = await makeClient("Bravo");
+// Run-scoped call signs: fixed names would collide with the 7-day
+// call-sign hold (D22) on the second run. Banner checks match on "Alpha".
+const RUN = String(Date.now() % 1000000);
+const alpha = await makeClient(`Alpha-${RUN}`);
+const bravo = await makeClient(`Bravo-${RUN}`);
 
 // AC3: rosters converge to 2 members on both clients
 for (const c of [alpha, bravo]) {

@@ -75,9 +75,29 @@ const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "search_transmissions",
+    description:
+      "Full-text search over radio transmission transcripts. Call this for \"what did «name» say about «topic»\"-style questions instead of reading the whole log.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "words to search for" },
+        channel: { type: "string", description: "limit to one channel" },
+        hours: { type: "number", description: "optional look-back window" },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "list_channels",
+    description:
+      "The team's channel list — the same one the app shows: every live team channel (including quiet ones) plus the asker's own DMs. Use this for any question about which or how many channels exist.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
     name: "get_chat_activity",
     description:
-      "Recent team chat activity per channel: message counts, the asker's unread counts, and the latest messages.",
+      "Recent team chat activity per channel: message counts, the asker's unread counts, and the latest messages. Quiet channels appear with zero counts — use list_channels for pure channel questions.",
     input_schema: {
       type: "object",
       properties: {
@@ -121,6 +141,8 @@ const TOOLS: Anthropic.Tool[] = [
 const STATUS_LABELS: Record<string, string> = {
   get_roster: "Checking who's on duty…",
   get_transmissions: "Reading the transmission log…",
+  search_transmissions: "Searching the transmission log…",
+  list_channels: "Checking the channel list…",
   get_chat_activity: "Scanning team chat…",
   get_tasks: "Pulling up the checklist…",
   add_task: "Adding it to the checklist…",
@@ -143,6 +165,8 @@ The team uses this app in the field: security details, parking, retail floors. A
 Rules:
 - Answer EXACTLY what was asked — no padding, no preamble.
 - Use your tools to look at real data before answering questions about the team, the radio, chat, or tasks. Never invent numbers or names.
+- Channel counts and lists come from list_channels — it matches what the app shows. If your answer excludes anything (archived channels, other people's DMs), say so.
+- For "what did someone say about X" questions, use search_transmissions.
 - Numeric or list-shaped answers go in stat/stats/chart/checklist blocks, not prose or markdown tables. Chart values must be real data.
 - Keep text blocks short; markdown limited to **bold** and simple "- " lists.
 - ALWAYS finish by calling the respond tool exactly once with your final blocks. Text outside respond is never shown to the user.
@@ -195,6 +219,16 @@ export const run = internalAction({
               channel:
                 typeof input.channel === "string" ? input.channel : undefined,
             });
+          case "search_transmissions":
+            return await ctx.runQuery(internal.ai.ctxSearchTransmissions, {
+              userId,
+              query: String(input.query ?? ""),
+              channel:
+                typeof input.channel === "string" ? input.channel : undefined,
+              hours: typeof input.hours === "number" ? input.hours : undefined,
+            });
+          case "list_channels":
+            return await ctx.runQuery(internal.ai.ctxChannels, { userId });
           case "get_chat_activity":
             return await ctx.runQuery(internal.ai.ctxChatActivity, {
               hours: typeof input.hours === "number" ? input.hours : 24,

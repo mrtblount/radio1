@@ -1,9 +1,14 @@
-import { mutation, query, type MutationCtx } from "./_generated/server";
+import {
+  mutation,
+  query,
+  type MutationCtx,
+  type QueryCtx,
+} from "./_generated/server";
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { assertCode, checkAdminCode } from "./access";
-import { unreadCount } from "./channels";
+import { unreadState, visibleChannelRows } from "./channels";
 
 const MAX_BODY = 4000;
 const TYPING_MS = 4_000;
@@ -66,12 +71,14 @@ export const send = mutation({
     const name = user?.name ?? "Unknown";
     const now = Date.now();
 
+    const mentions = await resolveMentions(ctx, clean, userId);
     const messageId = await ctx.db.insert("messages", {
       channelKey,
       userId,
       name,
       kind: isAnnouncement ? "announce" : "text",
       body: clean,
+      ...(mentions.length ? { mentions } : {}),
       createdAt: now,
     });
     await ctx.scheduler.runAfter(0, internal.pushSend.notifyMessage, {
@@ -91,6 +98,54 @@ export const send = mutation({
     }
   },
 });
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * Resolve @mentions against the team directory (D23). Case-insensitive
+ * `@name` bounded on both sides ("tony@alpha.net" and "@Alpha2" mention
+ * no one) and matched longest-name-first with span consumption, so
+ * "@Sam Cole" doesn't also mention "Sam". When stale duplicate rows share
+ * a name, the most recently active holder wins. Names are denormalized
+ * for rendering.
+ */
+async function resolveMentions(
+  ctx: QueryCtx,
+  body: string,
+  senderId: string,
+): Promise<{ userId: string; name: string }[]> {
+  if (!body.includes("@")) return [];
+  const users = await ctx.db.query("users").collect();
+  const byName = new Map<string, (typeof users)[number]>();
+  for (const u of users) {
+    if (u.userId === senderId) continue;
+    const key = u.name.trim().toLowerCase();
+    if (key.length < 2) continue;
+    const held = byName.get(key);
+    if (!held || u.lastActiveAt > held.lastActiveAt) byName.set(key, u);
+  }
+
+  const candidates = [...byName.entries()].sort(
+    (a, b) => b[0].length - a[0].length,
+  );
+  const claimed: Array<[number, number]> = [];
+  const mentioned: { userId: string; name: string }[] = [];
+  for (const [key, u] of candidates) {
+    const re = new RegExp(
+      `(?<![\\w-])@${escapeRe(key)}(?![\\w-])`,
+      "gi",
+    );
+    for (const m of body.matchAll(re)) {
+      const start = m.index ?? 0;
+      const end = start + m[0].length;
+      if (claimed.some(([s, e]) => start < e && end > s)) continue;
+      claimed.push([start, end]);
+      mentioned.push({ userId: u.userId, name: u.name });
+      break;
+    }
+  }
+  return mentioned;
+}
 
 async function upsertRead(
   ctx: MutationCtx,
@@ -123,19 +178,58 @@ export const markRead = mutation({
   },
 });
 
-/** Total unread across every channel visible to this user (tab badge). */
+/**
+ * Tab-badge totals across every visible channel: `total` excludes muted
+ * channels; `mentions` counts every channel — a mention in a muted channel
+ * still badges (amber), it just stays quiet (D23).
+ */
 export const unreadSummary = query({
   args: { userId: v.string(), accessCode: v.optional(v.string()) },
   handler: async (ctx, { userId, accessCode }) => {
     assertCode(accessCode);
-    const channels = await ctx.db.query("channels").collect();
+    const rows = await visibleChannelRows(ctx, userId);
     let total = 0;
-    for (const c of channels) {
-      if (c.archived) continue;
-      if (c.kind === "dm" && !c.dmMembers?.includes(userId)) continue;
-      total += await unreadCount(ctx, c.key, userId);
+    let mentions = 0;
+    let mutedMentions = 0;
+    for (const c of [...rows.team, ...rows.dms]) {
+      const s = await unreadState(ctx, c.key, userId);
+      mentions += s.mentionUnread;
+      if (s.alertLevel === "mute") mutedMentions += s.mentionUnread;
+      else total += s.unread;
     }
-    return { total };
+    // App-icon badge = total + mutedMentions (a muted channel's mention still
+    // counts; its other unread doesn't; nothing is double-counted).
+    return { total, mentions, mutedMentions };
+  },
+});
+
+/** Per-channel alert level: all (default) · mentions-only · mute (D23). */
+export const setAlertLevel = mutation({
+  args: {
+    userId: v.string(),
+    channelKey: v.string(),
+    level: v.union(v.literal("all"), v.literal("mentions"), v.literal("mute")),
+    accessCode: v.optional(v.string()),
+  },
+  handler: async (ctx, { userId, channelKey, level, accessCode }) => {
+    assertCode(accessCode);
+    const existing = await ctx.db
+      .query("reads")
+      .withIndex("by_user_channel", (q) =>
+        q.eq("userId", userId).eq("channelKey", channelKey),
+      )
+      .unique();
+    if (existing) {
+      await ctx.db.patch(existing._id, { alertLevel: level });
+    } else {
+      // lastReadAt 0 = identical unread semantics to having no row.
+      await ctx.db.insert("reads", {
+        userId,
+        channelKey,
+        lastReadAt: 0,
+        alertLevel: level,
+      });
+    }
   },
 });
 

@@ -15,6 +15,8 @@ import { Composer } from "./Composer";
 
 const ADMIN_CODE_KEY = "team-radio:adminCode";
 
+export type AlertLevel = "all" | "mentions" | "mute";
+
 export interface ThreadTarget {
   key: string;
   name: string;
@@ -22,6 +24,8 @@ export interface ThreadTarget {
   postRestricted: boolean;
   online?: boolean;
   otherUserId?: string;
+  /** Snapshot at open; the bell keeps its own optimistic state (D23). */
+  alertLevel?: AlertLevel;
 }
 
 interface Props {
@@ -50,11 +54,55 @@ export function ChatThread({
   const send = useMutation(api.messages.send);
   const markRead = useMutation(api.messages.markRead);
   const setTyping = useMutation(api.messages.setTyping);
+  const saveAlertLevel = useMutation(api.messages.setAlertLevel);
   const typers = useQuery(api.messages.typers, {
     channelKey: target.key,
     userId: identity.userId,
     ...code,
   });
+  const directory = useQuery(api.users.list, code);
+  const mentionNames = useMemo(
+    () =>
+      // Set-dedupe: a reclaimed call sign can appear on two directory rows
+      // (30d window vs 7d hold) and duplicate names would collide as keys.
+      [
+        ...new Set(
+          (directory ?? [])
+            .filter((u) => u.userId !== identity.userId)
+            .map((u) => u.name),
+        ),
+      ],
+    [directory, identity.userId],
+  );
+
+  // Per-channel alert level (D23): optimistic local state; the server value
+  // (via channels.list) backfills until the user touches the bell.
+  const [alertLevel, setAlertLevelState] = useState<AlertLevel>(
+    target.alertLevel ?? "all",
+  );
+  const bellTouchedRef = useRef(false);
+  useEffect(() => {
+    bellTouchedRef.current = false;
+    setAlertLevelState(target.alertLevel ?? "all");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target.key]);
+  useEffect(() => {
+    if (!bellTouchedRef.current && target.alertLevel) {
+      setAlertLevelState(target.alertLevel);
+    }
+  }, [target.alertLevel]);
+  const cycleAlertLevel = () => {
+    bellTouchedRef.current = true;
+    const next: AlertLevel =
+      alertLevel === "all" ? "mentions" : alertLevel === "mentions" ? "mute" : "all";
+    setAlertLevelState(next);
+    void saveAlertLevel({
+      userId: identity.userId,
+      channelKey: target.key,
+      level: next,
+      ...code,
+    }).catch(() => setAlertLevelState(alertLevel));
+  };
 
   const scrollerRef = useRef<HTMLDivElement>(null);
   const prevScrollHeightRef = useRef<number | null>(null);
@@ -196,12 +244,37 @@ export function ChatThread({
                 : "team channel"}
           </div>
         </div>
+        <button
+          type="button"
+          data-testid="alert-level-toggle"
+          onClick={cycleAlertLevel}
+          className="silkscreen ml-auto shrink-0 rounded px-2.5 py-2"
+          style={{
+            fontSize: "0.55rem",
+            color:
+              alertLevel === "mentions"
+                ? "var(--tx)"
+                : alertLevel === "mute"
+                  ? "var(--ink-dim)"
+                  : "var(--ink)",
+            background: alertLevel === "mute" ? "var(--panel-2)" : "transparent",
+            border: `1px solid ${
+              alertLevel === "mentions" ? "var(--tx)" : "var(--line)"
+            }`,
+          }}
+        >
+          {alertLevel === "all"
+            ? "alerts: all"
+            : alertLevel === "mentions"
+              ? "alerts: @"
+              : "muted"}
+        </button>
         {target.kind === "dm" && onGoDirect && target.otherUserId && (
           <button
             type="button"
             data-testid="go-direct"
             onClick={() => onGoDirect(target.otherUserId!, target.name)}
-            className="silkscreen ml-auto rounded px-3 py-2"
+            className="silkscreen shrink-0 rounded px-3 py-2"
             style={{
               fontSize: "0.62rem",
               color: target.online ? "#141414" : "var(--ink-dim)",
@@ -301,6 +374,7 @@ export function ChatThread({
       {/* Composer / lock */}
       {canPost ? (
         <Composer
+          mentionNames={target.kind === "team" ? mentionNames : undefined}
           placeholder={
             target.kind === "dm" ? `Message ${target.name}` : `Message ${target.name}`
           }

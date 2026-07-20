@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Identity } from "../../hooks/useIdentity";
+import { loadKeepAwake, saveKeepAwake } from "../../lib/radio/session";
 import {
   disablePush,
   enablePush,
@@ -16,9 +17,16 @@ interface Props {
   open: boolean;
   identity: Identity;
   onClose: () => void;
+  /** Live-apply the keep-awake pref to the radio's wake lock (D18). */
+  onKeepAwakeChange?: (on: boolean) => void;
 }
 
-export function SettingsSheet({ open, identity, onClose }: Props) {
+export function SettingsSheet({
+  open,
+  identity,
+  onClose,
+  onKeepAwakeChange,
+}: Props) {
   const codeArg = identity.code ? { accessCode: identity.code } : {};
   const me = useQuery(
     api.users.me,
@@ -29,6 +37,7 @@ export function SettingsSheet({ open, identity, onClose }: Props) {
 
   const [busy, setBusy] = useState(false);
   const [pushState, setPushState] = useState<PushSetupResult | null>(null);
+  const [keepAwake, setKeepAwake] = useState(loadKeepAwake);
   const [adminEntry, setAdminEntry] = useState("");
   const [adminCode, setAdminCode] = useState(
     () => sessionStorage.getItem(ADMIN_CODE_KEY) ?? "",
@@ -164,6 +173,47 @@ export function SettingsSheet({ open, identity, onClose }: Props) {
               Install to Home Screen to receive alerts with the screen off.
             </p>
           )}
+        </div>
+
+        {/* Screen (D18) */}
+        <div
+          className="mb-3 rounded-md px-4 py-3"
+          style={{ background: "var(--panel)", border: "1px solid var(--line)" }}
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="silkscreen mb-1" style={{ fontSize: "0.55rem", color: "var(--ink-dim)" }}>
+                screen
+              </div>
+              <div className="text-sm" style={{ color: "var(--ink)" }}>
+                Keep screen awake while on duty
+              </div>
+            </div>
+            <button
+              type="button"
+              data-testid="keep-awake-toggle"
+              onClick={() => {
+                const next = !keepAwake;
+                setKeepAwake(next);
+                saveKeepAwake(next);
+                onKeepAwakeChange?.(next);
+              }}
+              className="silkscreen rounded px-3 py-2"
+              style={{
+                fontSize: "0.62rem",
+                background: keepAwake ? "var(--rx)" : "var(--panel-2)",
+                color: keepAwake ? "#0b0d11" : "var(--ink-dim)",
+                border: "1px solid var(--line)",
+              }}
+            >
+              {keepAwake ? "on" : "off"}
+            </button>
+          </div>
+          <p className="mt-2 text-xs" style={{ color: "var(--ink-dim)" }}>
+            With the screen off, live radio audio stops — that's a web
+            platform limit. Missed transmissions still arrive as clips and
+            alerts.
+          </p>
         </div>
 
         {/* Team setup (admin) */}

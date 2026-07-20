@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useConvex, useMutation, useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { useRadio } from "./hooks/useRadio";
-import { useIdentity } from "./hooks/useIdentity";
+import { NAME_TAKEN_MSG, useIdentity } from "./hooks/useIdentity";
 import { useAppHeartbeat } from "./hooks/useAppHeartbeat";
-import { loadAccessCode } from "./lib/platform/identity";
+import { forceGate, loadAccessCode } from "./lib/platform/identity";
 import { beepIncoming } from "./lib/radio/beeps";
 import { JoinScreen } from "./components/JoinScreen";
 import { ChannelScreen, type DirectInfo } from "./components/ChannelScreen";
@@ -22,9 +22,11 @@ interface DirectState {
 }
 
 export default function App() {
-  const { state, join, leave, pressPTT, releasePTT } = useRadio();
-  const { identified, identity, identify } = useIdentity();
+  const { state, join, leave, pressPTT, releasePTT, setKeepAwake } = useRadio();
+  const { identified, identity, identify, revoke } = useIdentity();
+  const convex = useConvex();
   const [tab, setTab] = useState<ShellTab>("radio");
+  const [gateError, setGateError] = useState<string | null>(null);
   const [direct, setDirect] = useState<DirectState | null>(null);
   const [pendingDm, setPendingDm] = useState<PendingDm | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -48,16 +50,37 @@ export default function App() {
   );
 
   // A fresh device's first successful radio join doubles as the identity gate.
+  // Belt for the gate race: the JoinScreen pre-checks the call sign, but if a
+  // second device claims it between check and upsert, drop back to the gate —
+  // a persisted name with no server row would strand the device half-in.
   useEffect(() => {
     if (!identified && state.screen === "channel") {
-      void identify(state.name, loadAccessCode());
+      void identify(state.name, loadAccessCode()).then((err) => {
+        if (err === NAME_TAKEN_MSG) {
+          leave();
+          forceGate();
+          setGateError(err);
+        }
+      });
     }
-  }, [identified, state.screen, state.name, identify]);
+  }, [identified, state.screen, state.name, identify, leave]);
 
   // Backfill: upgraded v1 devices are already "identified" (stored name) but
-  // have no server users row — upsert once on load (idempotent).
+  // have no server users row — upsert once on load (idempotent). A name-taken
+  // refusal here means the persisted call sign was claimed while this device
+  // had no row (a lost gate race that outlived its session): silently
+  // swallowing it would strand the device rowless forever — un-mentionable,
+  // un-DM-able, invisible to push. Back to the gate instead.
   useEffect(() => {
-    if (identified) void identify(identity.name, identity.code);
+    if (identified) {
+      void identify(identity.name, identity.code).then((err) => {
+        if (err === NAME_TAKEN_MSG) {
+          leave();
+          revoke();
+          setGateError(err);
+        }
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -93,8 +116,8 @@ export default function App() {
 
   // Keep the app-icon badge honest.
   useEffect(() => {
-    setAppBadge(unread?.total ?? 0);
-  }, [unread?.total]);
+    setAppBadge((unread?.total ?? 0) + (unread?.mutedMentions ?? 0));
+  }, [unread?.total, unread?.mutedMentions]);
 
   // ── Direct PTT (PLAN D8): caller side ────────────────────────────────────
   const goDirect = useCallback(
@@ -171,11 +194,19 @@ export default function App() {
     return (
       <JoinScreen
         joining={state.joining}
-        joinError={state.joinError}
+        joinError={state.joinError ?? gateError}
         onJoin={(name, channel, accessCode) => {
+          setGateError(null);
           void join(name, channel, accessCode);
         }}
         onChatOnly={identify}
+        checkName={(name, accessCode) =>
+          convex.query(api.users.nameAvailable, {
+            userId: identity.userId,
+            name,
+            ...(accessCode ? { accessCode } : {}),
+          })
+        }
       />
     );
   }
@@ -251,6 +282,7 @@ export default function App() {
         onTab={setTab}
         showOps={showOps}
         chatUnread={unread?.total ?? 0}
+        chatMentions={unread?.mentions ?? 0}
         radioActive={state.screen === "channel"}
         onSettings={() => setShowSettings(true)}
       />
@@ -258,6 +290,7 @@ export default function App() {
         open={showSettings}
         identity={identity}
         onClose={() => setShowSettings(false)}
+        onKeepAwakeChange={setKeepAwake}
       />
     </div>
   );

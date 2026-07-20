@@ -58,6 +58,7 @@ export function ChatTab({
         name: team.name,
         kind: "team",
         postRestricted: team.postRestricted,
+        alertLevel: team.alertLevel,
       });
       return;
     }
@@ -70,6 +71,7 @@ export function ChatTab({
         postRestricted: false,
         online: dm.online,
         otherUserId: dm.otherUserId,
+        alertLevel: dm.alertLevel,
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -113,12 +115,18 @@ export function ChatTab({
   };
 
   if (thread) {
-    // Live-refresh DM presence from the channel list when available.
+    // Live-refresh DM presence + alert level from the channel list.
     const dmRow = channels?.dms.find((d) => d.key === thread.key);
+    const teamRow = channels?.team.find((c) => c.key === thread.key);
+    const live = dmRow
+      ? { ...thread, online: dmRow.online, alertLevel: dmRow.alertLevel }
+      : teamRow
+        ? { ...thread, alertLevel: teamRow.alertLevel }
+        : thread;
     return (
       <ChatThread
         identity={identity}
-        target={dmRow ? { ...thread, online: dmRow.online } : thread}
+        target={live}
         visible={visible}
         onBack={() => setThread(null)}
         onGoDirect={onGoDirect}
@@ -137,6 +145,7 @@ export function ChatTab({
             name: c.name,
             kind: "team",
             postRestricted: c.postRestricted,
+            alertLevel: c.alertLevel,
           })
         }
         onOpenDm={(d) =>
@@ -147,6 +156,7 @@ export function ChatTab({
             postRestricted: false,
             online: d.online,
             otherUserId: d.otherUserId,
+            alertLevel: d.alertLevel,
           })
         }
         onNewChannel={() => setShowNewChannel(true)}

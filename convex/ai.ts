@@ -8,7 +8,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { assertCode } from "./access";
 import { ACTIVE_MS } from "./users";
-import { unreadCount } from "./channels";
+import { unreadState, visibleChannelRows } from "./channels";
 import { todayKey } from "./tasks";
 
 const THREAD_LIMIT = 60;
@@ -81,18 +81,17 @@ export const dashboard = query({
         .map((m) => m.userId ?? m.sessionId),
     ).size;
 
-    // Missed = unread clips across my channels.
-    const channels = await ctx.db.query("channels").collect();
+    // Missed = unread clips across my channels (muted channels stay quiet).
+    const rows = await visibleChannelRows(ctx, userId);
     let missed = 0;
-    for (const c of channels) {
-      if (c.archived) continue;
-      if (c.kind === "dm" && !c.dmMembers?.includes(userId)) continue;
+    for (const c of [...rows.team, ...rows.dms]) {
       const read = await ctx.db
         .query("reads")
         .withIndex("by_user_channel", (q) =>
           q.eq("userId", userId).eq("channelKey", c.key),
         )
         .unique();
+      if (read?.alertLevel === "mute") continue;
       const since = read?.lastReadAt ?? 0;
       const fresh = await ctx.db
         .query("messages")
@@ -180,6 +179,17 @@ export const ctxRoster = internalQuery({
   },
 });
 
+/** Serialize a transcript for the agent: truncated, confidence-marked. */
+function agentTranscript(t: {
+  transcript?: string;
+  transcriptStatus: string;
+  transcriptConfidence?: "ok" | "low";
+}): string {
+  if (t.transcriptStatus !== "done") return `(${t.transcriptStatus})`;
+  const text = (t.transcript ?? "").slice(0, 300);
+  return t.transcriptConfidence === "low" ? `${text} (low confidence)` : text;
+}
+
 export const ctxTransmissions = internalQuery({
   args: {
     hours: v.number(),
@@ -189,12 +199,8 @@ export const ctxTransmissions = internalQuery({
   handler: async (ctx, { hours, userId, channel }) => {
     const since = Date.now() - hours * 3600_000;
     // The agent must not read other people's direct-line transmissions.
-    const channels = await ctx.db.query("channels").collect();
-    const visible = new Set(
-      channels
-        .filter((c) => c.kind !== "dm" || c.dmMembers?.includes(userId))
-        .map((c) => c.key),
-    );
+    const rows = await visibleChannelRows(ctx, userId);
+    const visible = new Set([...rows.team, ...rows.dms].map((c) => c.key));
     const all = await ctx.db.query("transmissions").order("desc").take(200);
     return all
       .filter((t) => t.startedAt > since)
@@ -206,11 +212,70 @@ export const ctxTransmissions = internalQuery({
         by: t.name,
         at: new Date(t.startedAt).toISOString(),
         seconds: Math.round(t.durationMs / 1000),
-        transcript:
-          t.transcriptStatus === "done"
-            ? t.transcript
-            : `(${t.transcriptStatus})`,
+        transcript: agentTranscript(t),
       }));
+  },
+});
+
+/**
+ * Full-text search over transmission transcripts (D20) — the "what did X say
+ * about Y" memory. Same visibility contract as ctxTransmissions.
+ */
+export const ctxSearchTransmissions = internalQuery({
+  args: {
+    userId: v.string(),
+    query: v.string(),
+    channel: v.optional(v.string()),
+    hours: v.optional(v.number()),
+  },
+  handler: async (ctx, { userId, query: text, channel, hours }) => {
+    const since = hours ? Date.now() - hours * 3600_000 : 0;
+    const rows = await visibleChannelRows(ctx, userId);
+    const visible = new Set([...rows.team, ...rows.dms].map((c) => c.key));
+    const hits = await ctx.db
+      .query("transmissions")
+      .withSearchIndex("search_transcript", (s) => {
+        const w = s.search("transcript", text);
+        return channel ? w.eq("channelKey", channel) : w;
+      })
+      .take(30);
+    return hits
+      .filter((t) => visible.has(t.channelKey))
+      .filter((t) => t.startedAt > since)
+      .slice(0, 20)
+      .map((t) => ({
+        channel: t.channelKey,
+        by: t.name,
+        at: new Date(t.startedAt).toISOString(),
+        seconds: Math.round(t.durationMs / 1000),
+        transcript: agentTranscript(t),
+      }));
+  },
+});
+
+/**
+ * The same channel enumeration the UI renders (D21): every live team channel
+ * (quiet ones included) + the asker's own DMs.
+ */
+export const ctxChannels = internalQuery({
+  args: { userId: v.string() },
+  handler: async (ctx, { userId }) => {
+    const rows = await visibleChannelRows(ctx, userId);
+    const users = await ctx.db.query("users").collect();
+    const nameOf = new Map(users.map((u) => [u.userId, u.name]));
+    return {
+      teamChannelCount: rows.team.length,
+      teamChannels: rows.team.map((c) => ({
+        name: c.key,
+        kind: c.postRestricted ? "announcements" : "team",
+      })),
+      directMessages: rows.dms.map((c) => ({
+        with: nameOf.get(c.dmMembers?.find((m) => m !== userId) ?? "") ??
+          "Unknown",
+      })),
+      note:
+        "teamChannels excludes archived channels; directMessages are only the asker's own.",
+    };
   },
 });
 
@@ -218,22 +283,21 @@ export const ctxChatActivity = internalQuery({
   args: { hours: v.number(), userId: v.string() },
   handler: async (ctx, { hours, userId }) => {
     const since = Date.now() - hours * 3600_000;
-    const channels = await ctx.db.query("channels").collect();
+    const rows = await visibleChannelRows(ctx, userId);
     const out = [];
-    for (const c of channels) {
-      if (c.archived) continue;
-      if (c.kind === "dm" && !c.dmMembers?.includes(userId)) continue;
+    for (const c of [...rows.team, ...rows.dms]) {
       const recent = await ctx.db
         .query("messages")
         .withIndex("by_channel", (q) =>
           q.eq("channelKey", c.key).gt("createdAt", since),
         )
         .take(50);
-      if (recent.length === 0) continue;
+      // Quiet channels are reported with zero counts, never dropped — the
+      // agent's channel view must match the UI's (D21, SPEC §9 P3).
       out.push({
         channel: c.kind === "dm" ? "(direct message)" : c.key,
         messages: recent.length,
-        unreadForMe: await unreadCount(ctx, c.key, userId),
+        unreadForMe: (await unreadState(ctx, c.key, userId)).unread,
         latest: recent.slice(-8).map((m) => ({
           by: m.name,
           kind: m.kind,
