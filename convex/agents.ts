@@ -156,6 +156,9 @@ export const maybeTrigger = internalMutation({
   },
   handler: async (ctx, { channelKey, text, speakerId, speakerName, source }) => {
     if (speakerId.startsWith("agent_")) return; // loop guard
+    // I7: the admin AI kill-switch gates channel agents too, live.
+    const settings = await ctx.db.query("settings").first();
+    if (settings && !settings.aiEnabled) return;
     const clean = text.trim();
     if (!clean) return;
     const agents = await ctx.runQuery(internal.agents.agentsForChannel, {
