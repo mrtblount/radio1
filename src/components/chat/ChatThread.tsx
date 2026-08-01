@@ -205,8 +205,8 @@ export function ChatThread({
       <header
         className="flex items-center gap-3 px-4 pb-3"
         style={{
-          background: "var(--panel)",
-          borderBottom: "1px solid var(--line)",
+          background: "var(--surface)",
+          borderBottom: "1.5px solid var(--line)",
           // Standalone PWA: content extends under the status bar — pad below
           // it (same pattern as every other top-level header).
           paddingTop: "max(env(safe-area-inset-top), 0.75rem)",
@@ -216,12 +216,9 @@ export function ChatThread({
           type="button"
           data-testid="chat-back"
           onClick={onBack}
-          className="silkscreen rounded px-2 py-1.5"
-          style={{
-            fontSize: "0.7rem",
-            color: "var(--ink-dim)",
-            border: "1px solid var(--line)",
-          }}
+          className="orb md:hidden"
+          aria-label="Back"
+          style={{ fontSize: "1rem" }}
         >
           ‹
         </button>
@@ -231,8 +228,8 @@ export function ChatThread({
               <span className={`led ${target.online ? "on-rx" : ""}`} />
             )}
             <span
-              className="display-type truncate font-bold"
-              style={{ fontSize: "1.15rem" }}
+              className="display-num truncate"
+              style={{ fontSize: "1.35rem" }}
             >
               {target.name}
             </span>
@@ -254,19 +251,18 @@ export function ChatThread({
           type="button"
           data-testid="alert-level-toggle"
           onClick={cycleAlertLevel}
-          className="silkscreen ml-auto shrink-0 rounded px-2.5 py-2"
+          className="pill silkscreen ml-auto shrink-0"
           style={{
             fontSize: "0.55rem",
+            padding: "7px 12px",
             color:
               alertLevel === "mentions"
                 ? "var(--tx)"
                 : alertLevel === "mute"
                   ? "var(--ink-dim)"
                   : "var(--ink)",
-            background: alertLevel === "mute" ? "var(--panel-2)" : "transparent",
-            border: `1px solid ${
-              alertLevel === "mentions" ? "var(--tx)" : "var(--line)"
-            }`,
+            background: alertLevel === "mute" ? "var(--surface-2)" : "transparent",
+            borderColor: alertLevel === "mentions" ? "var(--tx)" : "var(--line-strong)",
           }}
         >
           {alertLevel === "all"
@@ -280,12 +276,13 @@ export function ChatThread({
             type="button"
             data-testid="go-direct"
             onClick={() => onGoDirect(target.otherUserId!, target.name)}
-            className="silkscreen shrink-0 rounded px-3 py-2"
+            className="pill silkscreen shrink-0"
             style={{
               fontSize: "0.62rem",
-              color: target.online ? "#f7f5f0" : "var(--ink-dim)",
-              background: target.online ? "var(--rx)" : "var(--panel-2)",
-              border: "1px solid var(--line)",
+              padding: "7px 14px",
+              color: target.online ? "#f2f7f0" : "var(--ink-dim)",
+              background: target.online ? "var(--rx)" : "var(--surface-2)",
+              borderColor: target.online ? "var(--rx)" : "transparent",
             }}
           >
             go direct
@@ -309,12 +306,8 @@ export function ChatThread({
               prevScrollHeightRef.current = el ? el.scrollHeight : null;
               loadMore(40);
             }}
-            className="silkscreen mb-3 w-full rounded-md py-2"
-            style={{
-              fontSize: "0.6rem",
-              color: "var(--ink-dim)",
-              border: "1px solid var(--line)",
-            }}
+            className="pill quiet silkscreen mb-3 w-full"
+            style={{ fontSize: "0.6rem", padding: "8px 0" }}
           >
             load earlier
           </button>
@@ -405,7 +398,7 @@ export function ChatThread({
       ) : (
         <div
           className="flex items-center gap-2 px-4 py-3"
-          style={{ background: "var(--panel)", borderTop: "1px solid var(--line)" }}
+          style={{ background: "var(--surface)", borderTop: "1.5px solid var(--line)" }}
         >
           <span
             className="silkscreen"

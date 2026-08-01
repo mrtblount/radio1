@@ -7,6 +7,8 @@ interface Props {
   onTyping?: () => void;
   /** Team member names offered as @-mention completions (D23). */
   mentionNames?: string[];
+  /** Rendered before the input — the thread's inline talk key. */
+  leading?: React.ReactNode;
 }
 
 const TYPING_THROTTLE_MS = 2_500;
@@ -23,6 +25,7 @@ export function Composer({
   onSend,
   onTyping,
   mentionNames,
+  leading,
 }: Props) {
   const [body, setBody] = useState("");
   const [caret, setCaret] = useState(0);
@@ -70,13 +73,14 @@ export function Composer({
   return (
     <div
       className="relative flex items-end gap-2 px-3 py-2.5"
-      style={{ background: "var(--panel)", borderTop: "1px solid var(--line)" }}
+      style={{ background: "var(--surface)", borderTop: "1.5px solid var(--line)" }}
     >
+      {leading}
       {suggestions.length > 0 && (
         <div
           data-testid="mention-suggest"
-          className="absolute bottom-full left-3 right-3 mb-1 overflow-hidden rounded-md"
-          style={{ background: "var(--panel-2)", border: "1px solid var(--line)" }}
+          className="absolute bottom-full left-3 right-3 mb-1 overflow-hidden rounded-2xl"
+          style={{ background: "var(--surface)", border: "1.5px solid var(--line)", boxShadow: "0 12px 32px rgba(27,26,30,0.14)" }}
         >
           {suggestions.map((n) => (
             <button
@@ -122,10 +126,10 @@ export function Composer({
             void submit();
           }
         }}
-        className="min-h-[42px] flex-1 resize-none rounded-md px-3.5 py-2.5 text-[0.95rem] outline-none"
+        className="min-h-[44px] flex-1 resize-none rounded-3xl px-4 py-2.5 text-[0.95rem] outline-none"
         style={{
-          background: "var(--panel-2)",
-          border: "1px solid var(--line)",
+          background: "var(--surface-2)",
+          border: "1.5px solid transparent",
           color: "var(--ink)",
           fontFamily: "var(--body)",
         }}
@@ -135,13 +139,15 @@ export function Composer({
         data-testid="chat-send"
         disabled={!body.trim() || sending || disabled}
         onClick={() => void submit()}
-        className="display-type rounded-md px-4 font-bold"
+        className="display-type rounded-full px-5"
         style={{
-          height: 42,
-          fontSize: "0.9rem",
-          letterSpacing: "0.06em",
-          background: body.trim() && !disabled ? "var(--tx)" : "var(--panel-2)",
-          color: body.trim() && !disabled ? "#f7f5f0" : "var(--ink-dim)",
+          height: 44,
+          fontSize: "0.85rem",
+          letterSpacing: "0.05em",
+          border: "none",
+          cursor: "pointer",
+          background: body.trim() && !disabled ? "var(--ink)" : "var(--surface-2)",
+          color: body.trim() && !disabled ? "var(--canvas)" : "var(--ink-faint)",
           transition: "background 120ms ease",
         }}
       >
