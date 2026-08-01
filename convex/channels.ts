@@ -154,6 +154,7 @@ export const list = query({
         key: c.key,
         name: c.name,
         postRestricted: c.postRestricted,
+        mode: c.mode ?? "ptt",
         ...(await unreadState(ctx, c.key, userId)),
         last: await lastMessage(ctx, c.key),
       });
@@ -192,7 +193,7 @@ export const listForRadio = query({
     assertCode(accessCode);
     const team = await teamChannelRows(ctx);
     return team
-      .filter((c) => !c.postRestricted)
+      .filter((c) => !c.postRestricted && (c.mode ?? "ptt") !== "text")
       .map((c) => ({ key: c.key, name: c.name }));
   },
 });
@@ -201,9 +202,11 @@ export const create = mutation({
   args: {
     name: v.string(),
     userId: v.string(),
+    // v3: "ptt" = radio-first (default), "text" = chat-first.
+    mode: v.optional(v.union(v.literal("ptt"), v.literal("text"))),
     accessCode: v.optional(v.string()),
   },
-  handler: async (ctx, { name, userId, accessCode }) => {
+  handler: async (ctx, { name, userId, mode, accessCode }) => {
     assertCode(accessCode);
     const clean = name.trim().slice(0, 32);
     if (clean.length < 2) throw new Error("Channel name too short");
@@ -225,6 +228,7 @@ export const create = mutation({
       key,
       name: clean,
       kind: "team",
+      ...(mode ? { mode } : {}),
       postRestricted: false,
       archived: false,
       createdBy: userId,

@@ -229,5 +229,21 @@ export const setTranscript = internalMutation({
       transcriptStatus: status,
       ...(confidence ? { transcriptConfidence: confidence } : {}),
     });
+    // v3 channel agents: a finished transcript is the voice trigger. Low-
+    // confidence transcripts still fan in — the responder is told to expect
+    // transcription noise. Failure here must never break the transcript path.
+    if (status === "done" && transcript) {
+      try {
+        await ctx.runMutation(internal.agents.maybeTrigger, {
+          channelKey: row.channelKey,
+          text: transcript,
+          speakerId: row.userId,
+          speakerName: row.name,
+          source: "voice",
+        });
+      } catch (err) {
+        console.warn("[agents] voice trigger failed", err);
+      }
+    }
   },
 });

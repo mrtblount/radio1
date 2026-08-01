@@ -72,6 +72,7 @@ export function ChatTab({
         key: team.key,
         name: team.name,
         kind: "team",
+        mode: team.mode,
         postRestricted: team.postRestricted,
         alertLevel: team.alertLevel,
       });
@@ -159,6 +160,7 @@ export function ChatTab({
               key: c.key,
               name: c.name,
               kind: "team",
+              mode: c.mode,
               postRestricted: c.postRestricted,
               alertLevel: c.alertLevel,
             })
@@ -208,13 +210,14 @@ export function ChatTab({
       <NewChannelSheet
         open={showNewChannel}
         onClose={() => setShowNewChannel(false)}
-        onCreate={async (name) => {
+        onCreate={async (name, mode) => {
           const { key } = await createChannel({
             name,
+            mode,
             userId: identity.userId,
             ...code,
           });
-          setThread({ key, name, kind: "team", postRestricted: false });
+          setThread({ key, name, kind: "team", mode, postRestricted: false });
         }}
       />
       <MemberSheet

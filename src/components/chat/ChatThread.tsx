@@ -14,6 +14,7 @@ import { MessageRow, type ChatMessage } from "./MessageRow";
 import { Composer } from "./Composer";
 import { PTTButton, type PTTVisualState } from "../PTTButton";
 import type { RadioBridge } from "./ChatTab";
+import { AgentSheet } from "./AgentSheet";
 
 const ADMIN_CODE_KEY = "team-radio:adminCode";
 
@@ -23,6 +24,8 @@ export interface ThreadTarget {
   key: string;
   name: string;
   kind: "team" | "dm";
+  /** "ptt" (radio-first, default) or "text" (chat-first, no talk key). */
+  mode?: "ptt" | "text";
   postRestricted: boolean;
   online?: boolean;
   otherUserId?: string;
@@ -116,6 +119,7 @@ export function ChatThread({
     () => sessionStorage.getItem(ADMIN_CODE_KEY) ?? "",
   );
   const [adminEntry, setAdminEntry] = useState("");
+  const [showAgents, setShowAgents] = useState(false);
   const verify = useQuery(
     api.settings.verifyAdmin,
     target.postRestricted && adminEntry ? { adminCode: adminEntry } : "skip",
@@ -208,7 +212,7 @@ export function ChatThread({
   // channel already → a live mini key. Elsewhere/off duty → one tap keys up
   // here, then the mini key goes live.
   let talkKey: React.ReactNode = null;
-  if (radio && target.kind === "team") {
+  if (radio && target.kind === "team" && (target.mode ?? "ptt") !== "text") {
     if (radio.onChannel === target.key) {
       const pttState: PTTVisualState = radio.talking
         ? "talking"
@@ -299,11 +303,22 @@ export function ChatThread({
                 : "team channel"}
           </div>
         </div>
+        {target.kind === "team" && !target.postRestricted && (
+          <button
+            type="button"
+            data-testid="agents-button"
+            onClick={() => setShowAgents(true)}
+            className="pill quiet silkscreen ml-auto shrink-0"
+            style={{ fontSize: "0.55rem", padding: "7px 12px" }}
+          >
+            agents
+          </button>
+        )}
         <button
           type="button"
           data-testid="alert-level-toggle"
           onClick={cycleAlertLevel}
-          className="pill silkscreen ml-auto shrink-0"
+          className={`pill silkscreen shrink-0 ${target.kind === "team" && !target.postRestricted ? "" : "ml-auto"}`}
           style={{
             fontSize: "0.55rem",
             padding: "7px 12px",
@@ -479,6 +494,15 @@ export function ChatThread({
             </span>
           )}
         </div>
+      )}
+      {target.kind === "team" && (
+        <AgentSheet
+          open={showAgents}
+          channelKey={target.key}
+          channelName={target.name}
+          identity={identity}
+          onClose={() => setShowAgents(false)}
+        />
       )}
     </div>
   );

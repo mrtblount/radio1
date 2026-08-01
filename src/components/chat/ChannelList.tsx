@@ -7,6 +7,7 @@ export interface TeamChannelRow {
   key: string;
   name: string;
   postRestricted: boolean;
+  mode?: "ptt" | "text";
   unread: number;
   mentionUnread: number;
   alertLevel: AlertLevel;

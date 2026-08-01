@@ -67,6 +67,10 @@ export default defineSchema({
     key: v.string(),
     name: v.string(),
     kind: v.union(v.literal("team"), v.literal("dm")),
+    // Presentation mode (v3): "ptt" = radio-first (default), "text" = chat-first
+    // (no radio emphasis, hidden from the go-on-duty picker). Optional so every
+    // existing row stays valid — absent means "ptt".
+    mode: v.optional(v.union(v.literal("ptt"), v.literal("text"))),
     // Only admins may post (the Announcements channel).
     postRestricted: v.boolean(),
     archived: v.boolean(),
@@ -77,6 +81,25 @@ export default defineSchema({
   })
     .index("by_key", ["key"])
     .index("by_kind", ["kind"]),
+
+  // ── Channel agents (v3, Buzz-style) — AI members of team channels ──────
+  // ADDITIVE: new table, written only by convex/agents.ts. An agent posts
+  // into the normal `messages` stream with userId = its agentId ("agent_…"),
+  // so history, unread badges, and push all work unchanged.
+  agents: defineTable({
+    agentId: v.string(), // "agent_<random>" — never collides with device ids
+    name: v.string(),
+    // The persona/brief the responder runs with (plain text).
+    instructions: v.string(),
+    // Channels this agent is a member of (team channel keys).
+    channelKeys: v.array(v.string()),
+    // "mention" = speaks only when named; "all" = weighs in on every
+    // transmission/message (radio discipline still applies in the prompt).
+    listenMode: v.union(v.literal("mention"), v.literal("all")),
+    active: v.boolean(),
+    createdBy: v.string(),
+    createdAt: v.number(),
+  }).index("by_agentId", ["agentId"]),
 
   // One stream of history per channel: text, announcements, system events,
   // and radio transmission clips interleaved.
