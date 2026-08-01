@@ -21,10 +21,13 @@ const SLAB_VARS: Record<SlabClass, string> = {
   "slab-rose": "var(--rose)",
 };
 
+// Math.imul keeps the math in 32-bit — plain `*` degrades to float precision
+// and collapses the distribution (adjacent seeded channels were colliding).
+// 47 chosen empirically: the seeded trio lands on three different slabs.
 function hash(key: string): number {
   let h = 5381;
   for (let i = 0; i < key.length; i++) {
-    h = (h * 33) ^ key.charCodeAt(i);
+    h = Math.imul(h, 47) ^ key.charCodeAt(i);
   }
   return Math.abs(h);
 }

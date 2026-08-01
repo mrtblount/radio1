@@ -268,16 +268,18 @@ export function ChatThread({
           paddingTop: "max(env(safe-area-inset-top), 0.75rem)",
         }}
       >
-        <button
-          type="button"
-          data-testid="chat-back"
-          onClick={onBack}
-          className="orb md:hidden"
-          aria-label="Back"
-          style={{ fontSize: "1rem" }}
-        >
-          ‹
-        </button>
+        <span className="md:hidden">
+          <button
+            type="button"
+            data-testid="chat-back"
+            onClick={onBack}
+            className="orb"
+            aria-label="Back"
+            style={{ fontSize: "1rem" }}
+          >
+            ‹
+          </button>
+        </span>
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             {target.kind === "dm" && (
