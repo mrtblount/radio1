@@ -40,7 +40,7 @@ function RowBadges({
         <span
           className="silkscreen rounded-full px-2 py-0.5"
           data-testid="mention-badge"
-          style={{ fontSize: "0.6rem", background: "var(--tx)", color: "#141414" }}
+          style={{ fontSize: "0.6rem", background: "var(--tx)", color: "#f7f5f0" }}
         >
           @{mentionUnread}
         </span>
@@ -49,7 +49,7 @@ function RowBadges({
         <span
           className="silkscreen rounded-full px-2 py-0.5"
           data-testid="unread-badge"
-          style={{ fontSize: "0.6rem", background: "var(--rx)", color: "#0b0d11" }}
+          style={{ fontSize: "0.6rem", background: "var(--rx)", color: "#f7f5f0" }}
         >
           {unread}
         </span>

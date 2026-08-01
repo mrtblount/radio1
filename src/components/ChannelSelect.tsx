@@ -79,7 +79,7 @@ export function ChannelSelect({ accessCode, joining, joinError, onPick }: Props)
           data-testid="join-error"
           className="mb-4 rounded-md px-4 py-3 text-sm"
           style={{
-            background: "rgba(255,81,71,0.1)",
+            background: "color-mix(in srgb, var(--alert) 10%, transparent)",
             border: "1px solid var(--alert)",
             color: "var(--ink)",
           }}

@@ -141,7 +141,7 @@ export function Composer({
           fontSize: "0.9rem",
           letterSpacing: "0.06em",
           background: body.trim() && !disabled ? "var(--tx)" : "var(--panel-2)",
-          color: body.trim() && !disabled ? "#141414" : "var(--ink-dim)",
+          color: body.trim() && !disabled ? "#f7f5f0" : "var(--ink-dim)",
           transition: "background 120ms ease",
         }}
       >

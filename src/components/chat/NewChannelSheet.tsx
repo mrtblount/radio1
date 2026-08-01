@@ -16,7 +16,7 @@ export function NewChannelSheet({ open, onClose, onCreate }: Props) {
   return (
     <div
       className="fixed inset-0 z-40 flex items-end justify-center"
-      style={{ background: "rgba(0,0,0,0.6)" }}
+      style={{ background: "rgba(27,26,30,0.45)" }}
       onClick={onClose}
     >
       <div
@@ -76,7 +76,7 @@ export function NewChannelSheet({ open, onClose, onCreate }: Props) {
             fontSize: "1.1rem",
             letterSpacing: "0.06em",
             background: name.trim().length >= 2 && !busy ? "var(--tx)" : "var(--panel-2)",
-            color: name.trim().length >= 2 && !busy ? "#141414" : "var(--ink-dim)",
+            color: name.trim().length >= 2 && !busy ? "#f7f5f0" : "var(--ink-dim)",
           }}
         >
           {busy ? "CREATING…" : "CREATE CHANNEL"}

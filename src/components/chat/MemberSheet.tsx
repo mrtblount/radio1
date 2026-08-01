@@ -39,7 +39,7 @@ export function MemberSheet({
   return (
     <div
       className="fixed inset-0 z-40 flex items-end justify-center"
-      style={{ background: "rgba(0,0,0,0.6)" }}
+      style={{ background: "rgba(27,26,30,0.45)" }}
       onClick={onClose}
     >
       <div
@@ -114,7 +114,7 @@ export function MemberSheet({
                     style={{
                       fontSize: "0.6rem",
                       color:
-                        m.online || m.onRadioChannel ? "#141414" : "var(--ink-dim)",
+                        m.online || m.onRadioChannel ? "#f7f5f0" : "var(--ink-dim)",
                       background:
                         m.online || m.onRadioChannel
                           ? "var(--rx)"

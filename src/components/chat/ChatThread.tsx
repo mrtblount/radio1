@@ -283,7 +283,7 @@ export function ChatThread({
             className="silkscreen shrink-0 rounded px-3 py-2"
             style={{
               fontSize: "0.62rem",
-              color: target.online ? "#141414" : "var(--ink-dim)",
+              color: target.online ? "#f7f5f0" : "var(--ink-dim)",
               background: target.online ? "var(--rx)" : "var(--panel-2)",
               border: "1px solid var(--line)",
             }}

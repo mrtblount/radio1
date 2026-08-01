@@ -148,7 +148,7 @@ export function ChannelScreen({
               className="silkscreen rounded px-3 py-2"
               style={{
                 fontSize: "0.65rem",
-                color: "#141414",
+                color: "#f7f5f0",
                 background: "var(--rx)",
                 border: "1px solid var(--line)",
               }}
@@ -177,7 +177,7 @@ export function ChannelScreen({
       <div
         className="mt-3 flex min-h-14 items-center justify-center rounded-md px-4"
         style={{
-          background: receiving || talking ? "rgba(70,224,138,0.06)" : "var(--panel)",
+          background: receiving || talking ? "color-mix(in srgb, var(--rx) 8%, transparent)" : "var(--panel)",
           border: `1px solid ${
             talking ? "var(--tx)" : receiving ? "var(--rx)" : "var(--line)"
           }`,
@@ -293,7 +293,7 @@ export function ChannelScreen({
       {actionMember && (
         <div
           className="fixed inset-0 z-40 flex items-end justify-center"
-          style={{ background: "rgba(0,0,0,0.6)" }}
+          style={{ background: "rgba(27,26,30,0.45)" }}
           onClick={() => setActionMember(null)}
         >
           <div
@@ -330,7 +330,7 @@ export function ChannelScreen({
                     fontSize: "1rem",
                     letterSpacing: "0.06em",
                     background: "var(--rx)",
-                    color: "#0b0d11",
+                    color: "#f7f5f0",
                   }}
                 >
                   GO DIRECT

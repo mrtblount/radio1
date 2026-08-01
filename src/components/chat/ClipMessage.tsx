@@ -90,7 +90,7 @@ export function ClipMessage({ clipId, accessCode }: Props) {
             height: 40,
             background: playing ? "var(--rx)" : "var(--panel-2)",
             border: `1px solid ${playing ? "var(--rx)" : "var(--line)"}`,
-            color: playing ? "#0b0d11" : "var(--ink)",
+            color: playing ? "#f7f5f0" : "var(--ink)",
             fontSize: "0.85rem",
             flexShrink: 0,
           }}
@@ -179,7 +179,7 @@ export function ClipMessage({ clipId, accessCode }: Props) {
               style={{
                 fontSize: "0.55rem",
                 background: ackedByMe ? "var(--tx)" : "transparent",
-                color: ackedByMe ? "#141414" : "var(--ink-dim)",
+                color: ackedByMe ? "#f7f5f0" : "var(--ink-dim)",
                 border: `1px solid ${ackedByMe ? "var(--tx)" : "var(--line)"}`,
               }}
             >

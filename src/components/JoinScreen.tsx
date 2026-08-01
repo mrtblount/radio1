@@ -163,7 +163,7 @@ export function JoinScreen({
         <p
           data-testid="join-error"
           className="mb-4 rounded-md px-4 py-3 text-sm"
-          style={{ background: "rgba(255,81,71,0.1)", border: "1px solid var(--alert)", color: "var(--ink)" }}
+          style={{ background: "color-mix(in srgb, var(--alert) 10%, transparent)", border: "1px solid var(--alert)", color: "var(--ink)" }}
         >
           {nameError ?? joinError ?? chatOnlyError}
         </p>
@@ -184,7 +184,7 @@ export function JoinScreen({
           fontSize: "1.3rem",
           letterSpacing: "0.08em",
           background: ready && !joining ? "var(--tx)" : "var(--panel-2)",
-          color: ready && !joining ? "#141414" : "var(--ink-dim)",
+          color: ready && !joining ? "#f7f5f0" : "var(--ink-dim)",
           transition: "background 120ms ease",
         }}
       >

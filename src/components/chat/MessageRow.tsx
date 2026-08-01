@@ -42,7 +42,7 @@ function renderBody(
         key={i}
         className="rounded px-1"
         style={{
-          background: "rgba(255,176,32,0.14)",
+          background: "color-mix(in srgb, var(--tx) 16%, transparent)",
           color: "var(--tx)",
           fontWeight: 500,
         }}
@@ -80,7 +80,7 @@ export function MessageRow({ message, mine, accessCode }: Props) {
       data-mentions-me={mentionsMe || undefined}
       className="rounded-md px-3.5 py-2.5"
       style={{
-        background: mentionsMe ? "rgba(255,176,32,0.05)" : "var(--panel)",
+        background: mentionsMe ? "color-mix(in srgb, var(--tx) 7%, transparent)" : "var(--panel)",
         border: "1px solid var(--line)",
         borderLeft:
           isAnnounce || mentionsMe

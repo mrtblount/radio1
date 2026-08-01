@@ -75,7 +75,7 @@ export function SettingsSheet({
   return (
     <div
       className="fixed inset-0 z-40 flex items-end justify-center"
-      style={{ background: "rgba(0,0,0,0.6)" }}
+      style={{ background: "rgba(27,26,30,0.45)" }}
       onClick={onClose}
     >
       <div
@@ -139,7 +139,7 @@ export function SettingsSheet({
               style={{
                 fontSize: "0.62rem",
                 background: notifyOn ? "var(--rx)" : "var(--panel-2)",
-                color: notifyOn ? "#0b0d11" : "var(--ink-dim)",
+                color: notifyOn ? "#f7f5f0" : "var(--ink-dim)",
                 border: "1px solid var(--line)",
               }}
             >
@@ -202,7 +202,7 @@ export function SettingsSheet({
               style={{
                 fontSize: "0.62rem",
                 background: keepAwake ? "var(--rx)" : "var(--panel-2)",
-                color: keepAwake ? "#0b0d11" : "var(--ink-dim)",
+                color: keepAwake ? "#f7f5f0" : "var(--ink-dim)",
                 border: "1px solid var(--line)",
               }}
             >
@@ -270,7 +270,7 @@ export function SettingsSheet({
                 style={{
                   fontSize: "0.62rem",
                   background: config?.aiEnabled ? "var(--rx)" : "var(--panel-2)",
-                  color: config?.aiEnabled ? "#0b0d11" : "var(--ink-dim)",
+                  color: config?.aiEnabled ? "#f7f5f0" : "var(--ink-dim)",
                   border: "1px solid var(--line)",
                 }}
               >

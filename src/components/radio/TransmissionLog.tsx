@@ -29,7 +29,7 @@ export function TransmissionLog({ open, channel, accessCode, onClose }: Props) {
   return (
     <div
       className="fixed inset-0 z-40 flex items-end justify-center"
-      style={{ background: "rgba(0,0,0,0.6)" }}
+      style={{ background: "rgba(27,26,30,0.45)" }}
       onClick={onClose}
     >
       <div
