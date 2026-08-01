@@ -12,6 +12,8 @@ import type { Identity } from "../../hooks/useIdentity";
 import { formatDayLabel } from "../../lib/platform/format";
 import { MessageRow, type ChatMessage } from "./MessageRow";
 import { Composer } from "./Composer";
+import { PTTButton, type PTTVisualState } from "../PTTButton";
+import type { RadioBridge } from "./ChatTab";
 
 const ADMIN_CODE_KEY = "team-radio:adminCode";
 
@@ -36,6 +38,8 @@ interface Props {
   onBack: () => void;
   /** Direct PTT hook-in (Phase D wires this). */
   onGoDirect?: (otherUserId: string, otherName: string) => void;
+  /** App-owned radio, for the inline talk key on team channels. */
+  radio?: RadioBridge;
 }
 
 export function ChatThread({
@@ -44,6 +48,7 @@ export function ChatThread({
   visible = true,
   onBack,
   onGoDirect,
+  radio,
 }: Props) {
   const code = identity.code ? { accessCode: identity.code } : {};
   const { results, status, loadMore } = usePaginatedQuery(
@@ -198,6 +203,53 @@ export function ChatThread({
   const activeTypers = (typers ?? []).filter((t) => t.until > Date.now());
 
   let lastDay = "";
+
+  // The talk key, right on the chat itself (team channels only). On this
+  // channel already → a live mini key. Elsewhere/off duty → one tap keys up
+  // here, then the mini key goes live.
+  let talkKey: React.ReactNode = null;
+  if (radio && target.kind === "team") {
+    if (radio.onChannel === target.key) {
+      const pttState: PTTVisualState = radio.talking
+        ? "talking"
+        : radio.busy
+          ? "busy"
+          : radio.requesting
+            ? "requesting"
+            : radio.receiving
+              ? "receiving"
+              : "idle";
+      talkKey = (
+        <PTTButton
+          size="mini"
+          state={pttState}
+          onPressStart={radio.pressPTT}
+          onPressEnd={radio.releasePTT}
+        />
+      );
+    } else {
+      talkKey = (
+        <button
+          type="button"
+          data-testid="thread-key-up"
+          onClick={() => radio.join(target.key)}
+          className="silkscreen flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-full"
+          style={{
+            fontSize: "0.5rem",
+            border: "1.5px dashed var(--line-strong)",
+            background: "transparent",
+            color: "var(--ink-dim)",
+            cursor: "pointer",
+          }}
+          aria-label="Go on air in this channel"
+        >
+          KEY
+          <br />
+          UP
+        </button>
+      );
+    }
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -373,6 +425,7 @@ export function ChatThread({
       {/* Composer / lock */}
       {canPost ? (
         <Composer
+          leading={talkKey}
           mentionNames={target.kind === "team" ? mentionNames : undefined}
           placeholder={
             target.kind === "dm" ? `Message ${target.name}` : `Message ${target.name}`
