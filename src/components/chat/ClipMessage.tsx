@@ -140,7 +140,7 @@ export function ClipMessage({ clipId, accessCode }: Props) {
               style={{
                 fontSize: "0.55rem",
                 color: showTranscript ? "var(--ink)" : "var(--ink-dim)",
-                border: "1px solid var(--line)",
+                border: "1.5px solid var(--line)",
               }}
             >
               transcript
@@ -154,7 +154,7 @@ export function ClipMessage({ clipId, accessCode }: Props) {
           className="mt-2 rounded px-3 py-2 text-sm leading-snug"
           style={{
             background: "var(--panel-2)",
-            border: "1px solid var(--line)",
+            border: "1.5px solid var(--line)",
             color: clip.transcript ? "var(--ink)" : "var(--ink-dim)",
           }}
         >

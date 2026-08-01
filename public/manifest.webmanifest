@@ -1,13 +1,13 @@
 {
-  "name": "Team Radio",
-  "short_name": "Radio",
+  "name": "Relay",
+  "short_name": "Relay",
   "description": "Push-to-talk radio for the team. Join a channel, hold the key, talk.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#0b0d11",
-  "theme_color": "#0b0d11",
+  "background_color": "#ece9e2",
+  "theme_color": "#ece9e2",
   "icons": [
     {
       "src": "/icons/icon-192.png",

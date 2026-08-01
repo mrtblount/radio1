@@ -68,8 +68,8 @@ export function DashStrip({ identity, open, onToggle }: Props) {
             <div
               key={c.label}
               data-testid={`dash-${c.label.replace(/\s/g, "-")}`}
-              className="flex-1 rounded-md px-3 py-2.5"
-              style={{ background: "var(--panel)", border: "1px solid var(--line)" }}
+              className="flex-1 rounded-2xl px-3 py-2.5"
+              style={{ background: "var(--panel)", border: "1.5px solid var(--line)" }}
             >
               <div className="flex items-center gap-1.5">
                 <span
