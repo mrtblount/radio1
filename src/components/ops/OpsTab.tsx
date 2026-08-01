@@ -100,8 +100,8 @@ export function OpsTab({ identity, onOpenChannel }: Props) {
               {m.role === "user" ? (
                 <div className="flex justify-end">
                   <div
-                    className="max-w-[85%] rounded-md px-3.5 py-2.5"
-                    style={{ background: "var(--panel-2)", border: "1px solid var(--line)" }}
+                    className="max-w-[85%] rounded-2xl px-3.5 py-2.5"
+                    style={{ background: "var(--panel-2)", border: "1.5px solid var(--line)" }}
                   >
                     <p className="text-[0.95rem]" style={{ color: "var(--ink)" }}>
                       {m.text}

@@ -1,10 +1,12 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { ConvexProvider } from "convex/react";
-import "@fontsource/saira-condensed/600.css";
-import "@fontsource/saira-condensed/700.css";
-import "@fontsource/barlow/400.css";
-import "@fontsource/barlow/500.css";
+import "@fontsource/archivo/600.css";
+import "@fontsource/archivo/700.css";
+import "@fontsource/archivo/800.css";
+import "@fontsource/instrument-sans/400.css";
+import "@fontsource/instrument-sans/500.css";
+import "@fontsource/instrument-sans/600.css";
 import "./index.css";
 import App from "./App";
 import { convexClient } from "./lib/convexClient";
@@ -44,7 +46,7 @@ class AppBoundary extends React.Component<
       return (
         <div
           className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center"
-          style={{ background: "var(--chassis)" }}
+          style={{ background: "var(--canvas)" }}
         >
           <span className="led on-alert" />
           <p className="silkscreen" style={{ fontSize: "0.7rem", color: "var(--ink-dim)" }}>
@@ -53,8 +55,8 @@ class AppBoundary extends React.Component<
           <button
             type="button"
             onClick={() => window.location.reload()}
-            className="display-type rounded-md px-6 py-3 font-bold"
-            style={{ background: "var(--tx)", color: "#141414", fontSize: "1.1rem" }}
+            className="pill on"
+            style={{ fontSize: "1rem", padding: "12px 28px" }}
           >
             RECONNECT
           </button>

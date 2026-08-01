@@ -39,14 +39,14 @@ export function MemberSheet({
   return (
     <div
       className="fixed inset-0 z-40 flex items-end justify-center"
-      style={{ background: "rgba(0,0,0,0.6)" }}
+      style={{ background: "rgba(27,26,30,0.45)" }}
       onClick={onClose}
     >
       <div
-        className="flex max-h-[75%] w-full max-w-md flex-col rounded-t-xl px-5 pt-4"
+        className="flex max-h-[75%] w-full max-w-md flex-col rounded-t-3xl px-5 pt-4"
         style={{
           background: "var(--panel)",
-          border: "1px solid var(--line)",
+          border: "1.5px solid var(--line)",
           paddingBottom: "max(env(safe-area-inset-bottom), 2rem)",
         }}
         onClick={(e) => e.stopPropagation()}
@@ -72,8 +72,8 @@ export function MemberSheet({
               <li
                 key={m.userId}
                 data-testid={`member-${m.name}`}
-                className="flex items-center gap-3 rounded-md px-3.5 py-3"
-                style={{ background: "var(--panel-2)", border: "1px solid var(--line)" }}
+                className="flex items-center gap-3 rounded-2xl px-3.5 py-3"
+                style={{ background: "var(--panel-2)", border: "1.5px solid var(--line)" }}
               >
                 <span className={`led ${m.online ? "on-rx" : ""}`} />
                 <span className="min-w-0 flex-1">
@@ -99,7 +99,7 @@ export function MemberSheet({
                   style={{
                     fontSize: "0.6rem",
                     color: "var(--ink-dim)",
-                    border: "1px solid var(--line)",
+                    border: "1.5px solid var(--line)",
                   }}
                 >
                   message
@@ -114,12 +114,12 @@ export function MemberSheet({
                     style={{
                       fontSize: "0.6rem",
                       color:
-                        m.online || m.onRadioChannel ? "#141414" : "var(--ink-dim)",
+                        m.online || m.onRadioChannel ? "#f7f5f0" : "var(--ink-dim)",
                       background:
                         m.online || m.onRadioChannel
                           ? "var(--rx)"
                           : "var(--panel-2)",
-                      border: "1px solid var(--line)",
+                      border: "1.5px solid var(--line)",
                     }}
                   >
                     direct

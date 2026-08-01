@@ -12,6 +12,9 @@ import type { Identity } from "../../hooks/useIdentity";
 import { formatDayLabel } from "../../lib/platform/format";
 import { MessageRow, type ChatMessage } from "./MessageRow";
 import { Composer } from "./Composer";
+import { PTTButton, type PTTVisualState } from "../PTTButton";
+import type { RadioBridge } from "./ChatTab";
+import { AgentSheet } from "./AgentSheet";
 
 const ADMIN_CODE_KEY = "team-radio:adminCode";
 
@@ -21,6 +24,8 @@ export interface ThreadTarget {
   key: string;
   name: string;
   kind: "team" | "dm";
+  /** "ptt" (radio-first, default) or "text" (chat-first, no talk key). */
+  mode?: "ptt" | "text";
   postRestricted: boolean;
   online?: boolean;
   otherUserId?: string;
@@ -36,6 +41,8 @@ interface Props {
   onBack: () => void;
   /** Direct PTT hook-in (Phase D wires this). */
   onGoDirect?: (otherUserId: string, otherName: string) => void;
+  /** App-owned radio, for the inline talk key on team channels. */
+  radio?: RadioBridge;
 }
 
 export function ChatThread({
@@ -44,6 +51,7 @@ export function ChatThread({
   visible = true,
   onBack,
   onGoDirect,
+  radio,
 }: Props) {
   const code = identity.code ? { accessCode: identity.code } : {};
   const { results, status, loadMore } = usePaginatedQuery(
@@ -111,6 +119,7 @@ export function ChatThread({
     () => sessionStorage.getItem(ADMIN_CODE_KEY) ?? "",
   );
   const [adminEntry, setAdminEntry] = useState("");
+  const [showAgents, setShowAgents] = useState(false);
   const verify = useQuery(
     api.settings.verifyAdmin,
     target.postRestricted && adminEntry ? { adminCode: adminEntry } : "skip",
@@ -199,40 +208,86 @@ export function ChatThread({
 
   let lastDay = "";
 
+  // The talk key, right on the chat itself (team channels only). On this
+  // channel already → a live mini key. Elsewhere/off duty → one tap keys up
+  // here, then the mini key goes live.
+  let talkKey: React.ReactNode = null;
+  if (radio && target.kind === "team" && (target.mode ?? "ptt") !== "text") {
+    if (radio.onChannel === target.key) {
+      const pttState: PTTVisualState = radio.talking
+        ? "talking"
+        : radio.busy
+          ? "busy"
+          : radio.requesting
+            ? "requesting"
+            : radio.receiving
+              ? "receiving"
+              : "idle";
+      talkKey = (
+        <PTTButton
+          size="mini"
+          state={pttState}
+          onPressStart={radio.pressPTT}
+          onPressEnd={radio.releasePTT}
+        />
+      );
+    } else {
+      talkKey = (
+        <button
+          type="button"
+          data-testid="thread-key-up"
+          onClick={() => radio.join(target.key)}
+          className="silkscreen flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-full"
+          style={{
+            fontSize: "0.5rem",
+            border: "1.5px dashed var(--line-strong)",
+            background: "transparent",
+            color: "var(--ink-dim)",
+            cursor: "pointer",
+          }}
+          aria-label="Go on air in this channel"
+        >
+          KEY
+          <br />
+          UP
+        </button>
+      );
+    }
+  }
+
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
       <header
         className="flex items-center gap-3 px-4 pb-3"
         style={{
-          background: "var(--panel)",
-          borderBottom: "1px solid var(--line)",
+          background: "var(--surface)",
+          borderBottom: "1.5px solid var(--line)",
           // Standalone PWA: content extends under the status bar — pad below
           // it (same pattern as every other top-level header).
           paddingTop: "max(env(safe-area-inset-top), 0.75rem)",
         }}
       >
-        <button
-          type="button"
-          data-testid="chat-back"
-          onClick={onBack}
-          className="silkscreen rounded px-2 py-1.5"
-          style={{
-            fontSize: "0.7rem",
-            color: "var(--ink-dim)",
-            border: "1px solid var(--line)",
-          }}
-        >
-          ‹
-        </button>
+        <span className="md:hidden">
+          <button
+            type="button"
+            data-testid="chat-back"
+            onClick={onBack}
+            className="orb"
+            aria-label="Back"
+            style={{ fontSize: "1rem" }}
+          >
+            ‹
+          </button>
+        </span>
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             {target.kind === "dm" && (
               <span className={`led ${target.online ? "on-rx" : ""}`} />
             )}
             <span
-              className="display-type truncate font-bold"
-              style={{ fontSize: "1.15rem" }}
+              className="display-num truncate"
+              style={{ fontSize: "1.35rem" }}
             >
               {target.name}
             </span>
@@ -250,23 +305,33 @@ export function ChatThread({
                 : "team channel"}
           </div>
         </div>
+        {target.kind === "team" && !target.postRestricted && (
+          <button
+            type="button"
+            data-testid="agents-button"
+            onClick={() => setShowAgents(true)}
+            className="pill quiet silkscreen ml-auto shrink-0"
+            style={{ fontSize: "0.55rem", padding: "7px 12px" }}
+          >
+            agents
+          </button>
+        )}
         <button
           type="button"
           data-testid="alert-level-toggle"
           onClick={cycleAlertLevel}
-          className="silkscreen ml-auto shrink-0 rounded px-2.5 py-2"
+          className={`pill silkscreen shrink-0 ${target.kind === "team" && !target.postRestricted ? "" : "ml-auto"}`}
           style={{
             fontSize: "0.55rem",
+            padding: "7px 12px",
             color:
               alertLevel === "mentions"
                 ? "var(--tx)"
                 : alertLevel === "mute"
                   ? "var(--ink-dim)"
                   : "var(--ink)",
-            background: alertLevel === "mute" ? "var(--panel-2)" : "transparent",
-            border: `1px solid ${
-              alertLevel === "mentions" ? "var(--tx)" : "var(--line)"
-            }`,
+            background: alertLevel === "mute" ? "var(--surface-2)" : "transparent",
+            borderColor: alertLevel === "mentions" ? "var(--tx)" : "var(--line-strong)",
           }}
         >
           {alertLevel === "all"
@@ -280,12 +345,13 @@ export function ChatThread({
             type="button"
             data-testid="go-direct"
             onClick={() => onGoDirect(target.otherUserId!, target.name)}
-            className="silkscreen shrink-0 rounded px-3 py-2"
+            className="pill silkscreen shrink-0"
             style={{
               fontSize: "0.62rem",
-              color: target.online ? "#141414" : "var(--ink-dim)",
-              background: target.online ? "var(--rx)" : "var(--panel-2)",
-              border: "1px solid var(--line)",
+              padding: "7px 14px",
+              color: target.online ? "#f2f7f0" : "var(--ink-dim)",
+              background: target.online ? "var(--rx)" : "var(--surface-2)",
+              borderColor: target.online ? "var(--rx)" : "transparent",
             }}
           >
             go direct
@@ -309,12 +375,8 @@ export function ChatThread({
               prevScrollHeightRef.current = el ? el.scrollHeight : null;
               loadMore(40);
             }}
-            className="silkscreen mb-3 w-full rounded-md py-2"
-            style={{
-              fontSize: "0.6rem",
-              color: "var(--ink-dim)",
-              border: "1px solid var(--line)",
-            }}
+            className="pill quiet silkscreen mb-3 w-full"
+            style={{ fontSize: "0.6rem", padding: "8px 0" }}
           >
             load earlier
           </button>
@@ -380,6 +442,7 @@ export function ChatThread({
       {/* Composer / lock */}
       {canPost ? (
         <Composer
+          leading={talkKey}
           mentionNames={target.kind === "team" ? mentionNames : undefined}
           placeholder={
             target.kind === "dm" ? `Message ${target.name}` : `Message ${target.name}`
@@ -405,7 +468,7 @@ export function ChatThread({
       ) : (
         <div
           className="flex items-center gap-2 px-4 py-3"
-          style={{ background: "var(--panel)", borderTop: "1px solid var(--line)" }}
+          style={{ background: "var(--surface)", borderTop: "1.5px solid var(--line)" }}
         >
           <span
             className="silkscreen"
@@ -433,6 +496,15 @@ export function ChatThread({
             </span>
           )}
         </div>
+      )}
+      {target.kind === "team" && (
+        <AgentSheet
+          open={showAgents}
+          channelKey={target.key}
+          channelName={target.name}
+          identity={identity}
+          onClose={() => setShowAgents(false)}
+        />
       )}
     </div>
   );

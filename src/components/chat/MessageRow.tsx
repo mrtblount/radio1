@@ -42,7 +42,7 @@ function renderBody(
         key={i}
         className="rounded px-1"
         style={{
-          background: "rgba(255,176,32,0.14)",
+          background: "color-mix(in srgb, var(--tx) 16%, transparent)",
           color: "var(--tx)",
           fontWeight: 500,
         }}
@@ -71,6 +71,7 @@ export function MessageRow({ message, mine, accessCode }: Props) {
   }
 
   const isAnnounce = message.kind === "announce";
+  const isAgent = message.userId.startsWith("agent_");
   const mentionsMe =
     !mine && !!message.mentions?.some((m) => m.userId === getUserId());
 
@@ -78,14 +79,20 @@ export function MessageRow({ message, mine, accessCode }: Props) {
     <div
       data-testid="chat-message"
       data-mentions-me={mentionsMe || undefined}
-      className="rounded-md px-3.5 py-2.5"
+      className="rounded-2xl px-4 py-3"
       style={{
-        background: mentionsMe ? "rgba(255,176,32,0.05)" : "var(--panel)",
-        border: "1px solid var(--line)",
+        background: mentionsMe
+          ? "color-mix(in srgb, var(--tx) 7%, transparent)"
+          : isAgent
+            ? "color-mix(in srgb, var(--lavender) 10%, var(--surface))"
+            : "var(--surface)",
+        border: "1.5px solid var(--line)",
         borderLeft:
           isAnnounce || mentionsMe
-            ? "3px solid var(--tx)"
-            : "1px solid var(--line)",
+            ? "4px solid var(--tx)"
+            : isAgent
+              ? "4px solid var(--lavender)"
+              : "1.5px solid var(--line)",
       }}
     >
       <div className="flex items-baseline gap-2">
@@ -93,11 +100,23 @@ export function MessageRow({ message, mine, accessCode }: Props) {
           className="silkscreen"
           style={{
             fontSize: "0.58rem",
-            color: mine ? "var(--tx)" : "var(--ink-dim)",
+            color: mine ? "var(--tx)" : isAgent ? "var(--lavender)" : "var(--ink-dim)",
           }}
         >
           {mine ? "you" : message.name}
         </span>
+        {isAgent && (
+          <span
+            className="silkscreen rounded-full px-1.5"
+            style={{
+              fontSize: "0.48rem",
+              background: "color-mix(in srgb, var(--lavender) 22%, transparent)",
+              color: "var(--ink)",
+            }}
+          >
+            agent
+          </span>
+        )}
         {isAnnounce && (
           <span
             className="silkscreen"

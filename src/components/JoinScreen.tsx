@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getBackend } from "../lib/radio/convexBackend";
 import { loadAccessCode, loadDisplayName } from "../lib/radio/session";
 import { CHANNELS } from "../lib/radio/types";
+import { channelSlab } from "../lib/platform/palette";
 
 interface Props {
   joining: boolean;
@@ -68,19 +69,20 @@ export function JoinScreen({
       style={{ paddingTop: "max(env(safe-area-inset-top), 2.5rem)" }}
     >
       <header className="mb-10 mt-6">
-        <div className="mb-2 flex items-center gap-2">
+        <div className="mb-3 flex items-center gap-2">
           <span className="led on-rx" />
           <span className="silkscreen" style={{ fontSize: "0.65rem", color: "var(--ink-dim)" }}>
             two-way · ready
           </span>
         </div>
-        <h1
-          className="display-type font-bold leading-none"
-          style={{ fontSize: "3.2rem", letterSpacing: "0.02em" }}
-        >
-          Team Radio
+        <h1 className="display-num" style={{ fontSize: "4.4rem" }}>
+          RELAY
         </h1>
-        <p className="mt-2 text-sm" style={{ color: "var(--ink-dim)" }}>
+        <div
+          className="mt-1 h-[6px] w-24 rounded-full"
+          style={{ background: "var(--coral)" }}
+        />
+        <p className="mt-4 text-[15px]" style={{ color: "var(--ink-dim)" }}>
           Hold the key. Talk. The whole channel hears you.
         </p>
       </header>
@@ -95,10 +97,10 @@ export function JoinScreen({
         placeholder="e.g. Tony"
         maxLength={24}
         autoComplete="off"
-        className="mb-8 w-full rounded-md px-4 py-3.5 text-lg outline-none"
+        className="mb-8 w-full rounded-2xl px-5 py-3.5 text-lg outline-none"
         style={{
-          background: "var(--panel)",
-          border: "1px solid var(--line)",
+          background: "var(--surface)",
+          border: "1.5px solid var(--line)",
           color: "var(--ink)",
           fontFamily: "var(--body)",
         }}
@@ -108,27 +110,40 @@ export function JoinScreen({
         Channel
       </label>
       <div className="mb-10 flex flex-col gap-2.5">
-        {CHANNELS.map((ch, i) => (
-          <button
-            key={ch}
-            type="button"
-            data-testid={`channel-${ch}`}
-            data-selected={channel === ch}
-            onClick={() => setChannel(ch)}
-            className="channel-key flex items-center gap-4 rounded-md px-4 py-3.5 text-left"
-          >
-            <span
-              className="display-type font-bold"
-              style={{
-                fontSize: "1.1rem",
-                color: channel === ch ? "var(--tx)" : "var(--ink-dim)",
-              }}
+        {CHANNELS.map((ch, i) => {
+          const selected = channel === ch;
+          return (
+            <button
+              key={ch}
+              type="button"
+              data-testid={`channel-${ch}`}
+              data-selected={selected}
+              onClick={() => setChannel(ch)}
+              className={`flex items-center gap-4 px-5 py-4 text-left transition-transform active:translate-y-[2px] ${
+                selected ? `slab ${channelSlab(ch)}` : "channel-key"
+              }`}
             >
-              CH{i + 1}
-            </span>
-            <span className="text-base font-medium">{ch}</span>
-          </button>
-        ))}
+              <span
+                className="display-num"
+                style={{
+                  fontSize: "1.3rem",
+                  opacity: selected ? 1 : 0.5,
+                }}
+              >
+                {String(i + 1).padStart(2, "0")}
+              </span>
+              <span className="text-base font-semibold">{ch}</span>
+              {selected && (
+                <span
+                  className="silkscreen ml-auto"
+                  style={{ fontSize: "0.6rem", opacity: 0.85 }}
+                >
+                  selected
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {codeRequired && (
@@ -147,10 +162,10 @@ export function JoinScreen({
             maxLength={32}
             autoComplete="off"
             inputMode="numeric"
-            className="mb-8 w-full rounded-md px-4 py-3.5 text-lg outline-none"
+            className="mb-8 w-full rounded-2xl px-5 py-3.5 text-lg outline-none"
             style={{
-              background: "var(--panel)",
-              border: "1px solid var(--line)",
+              background: "var(--surface)",
+              border: "1.5px solid var(--line)",
               color: "var(--ink)",
               fontFamily: "var(--body)",
               letterSpacing: "0.2em",
@@ -163,7 +178,7 @@ export function JoinScreen({
         <p
           data-testid="join-error"
           className="mb-4 rounded-md px-4 py-3 text-sm"
-          style={{ background: "rgba(255,81,71,0.1)", border: "1px solid var(--alert)", color: "var(--ink)" }}
+          style={{ background: "color-mix(in srgb, var(--alert) 10%, transparent)", border: "1px solid var(--alert)", color: "var(--ink)" }}
         >
           {nameError ?? joinError ?? chatOnlyError}
         </p>
@@ -179,13 +194,15 @@ export function JoinScreen({
             if (ok) onJoin(name.trim(), channel, code.trim());
           });
         }}
-        className="display-type mb-4 w-full rounded-md py-4 font-bold"
+        className="display-type mb-4 w-full rounded-full py-4"
         style={{
-          fontSize: "1.3rem",
-          letterSpacing: "0.08em",
-          background: ready && !joining ? "var(--tx)" : "var(--panel-2)",
-          color: ready && !joining ? "#141414" : "var(--ink-dim)",
-          transition: "background 120ms ease",
+          fontSize: "1.25rem",
+          letterSpacing: "0.06em",
+          border: "none",
+          cursor: "pointer",
+          background: ready && !joining ? "var(--ink)" : "var(--surface-2)",
+          color: ready && !joining ? "var(--canvas)" : "var(--ink-faint)",
+          transition: "background 120ms ease, transform 80ms ease",
         }}
       >
         {joining || checking ? "KEYING IN…" : "GO ON DUTY"}

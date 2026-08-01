@@ -75,14 +75,14 @@ export function SettingsSheet({
   return (
     <div
       className="fixed inset-0 z-40 flex items-end justify-center"
-      style={{ background: "rgba(0,0,0,0.6)" }}
+      style={{ background: "rgba(27,26,30,0.45)" }}
       onClick={onClose}
     >
       <div
-        className="flex max-h-[85%] w-full max-w-md flex-col overflow-y-auto rounded-t-xl px-5 pt-4"
+        className="flex max-h-[85%] w-full max-w-md flex-col overflow-y-auto rounded-t-3xl px-5 pt-4"
         style={{
           background: "var(--chassis)",
-          border: "1px solid var(--line)",
+          border: "1.5px solid var(--line)",
           paddingBottom: "max(env(safe-area-inset-bottom), 2rem)",
         }}
         onClick={(e) => e.stopPropagation()}
@@ -99,7 +99,7 @@ export function SettingsSheet({
             type="button"
             onClick={onClose}
             className="silkscreen rounded px-2 py-1"
-            style={{ fontSize: "0.6rem", color: "var(--ink-dim)", border: "1px solid var(--line)" }}
+            style={{ fontSize: "0.6rem", color: "var(--ink-dim)", border: "1.5px solid var(--line)" }}
           >
             close
           </button>
@@ -107,8 +107,8 @@ export function SettingsSheet({
 
         {/* Identity */}
         <div
-          className="mb-3 rounded-md px-4 py-3"
-          style={{ background: "var(--panel)", border: "1px solid var(--line)" }}
+          className="mb-3 rounded-2xl px-4 py-3"
+          style={{ background: "var(--panel)", border: "1.5px solid var(--line)" }}
         >
           <div className="silkscreen mb-1" style={{ fontSize: "0.55rem", color: "var(--ink-dim)" }}>
             call sign
@@ -118,8 +118,8 @@ export function SettingsSheet({
 
         {/* Alerts */}
         <div
-          className="mb-3 rounded-md px-4 py-3"
-          style={{ background: "var(--panel)", border: "1px solid var(--line)" }}
+          className="mb-3 rounded-2xl px-4 py-3"
+          style={{ background: "var(--panel)", border: "1.5px solid var(--line)" }}
         >
           <div className="flex items-center justify-between">
             <div>
@@ -139,8 +139,8 @@ export function SettingsSheet({
               style={{
                 fontSize: "0.62rem",
                 background: notifyOn ? "var(--rx)" : "var(--panel-2)",
-                color: notifyOn ? "#0b0d11" : "var(--ink-dim)",
-                border: "1px solid var(--line)",
+                color: notifyOn ? "#f7f5f0" : "var(--ink-dim)",
+                border: "1.5px solid var(--line)",
               }}
             >
               {busy ? "…" : notifyOn ? "on" : "off"}
@@ -177,8 +177,8 @@ export function SettingsSheet({
 
         {/* Screen (D18) */}
         <div
-          className="mb-3 rounded-md px-4 py-3"
-          style={{ background: "var(--panel)", border: "1px solid var(--line)" }}
+          className="mb-3 rounded-2xl px-4 py-3"
+          style={{ background: "var(--panel)", border: "1.5px solid var(--line)" }}
         >
           <div className="flex items-center justify-between">
             <div>
@@ -202,8 +202,8 @@ export function SettingsSheet({
               style={{
                 fontSize: "0.62rem",
                 background: keepAwake ? "var(--rx)" : "var(--panel-2)",
-                color: keepAwake ? "#0b0d11" : "var(--ink-dim)",
-                border: "1px solid var(--line)",
+                color: keepAwake ? "#f7f5f0" : "var(--ink-dim)",
+                border: "1.5px solid var(--line)",
               }}
             >
               {keepAwake ? "on" : "off"}
@@ -218,8 +218,8 @@ export function SettingsSheet({
 
         {/* Team setup (admin) */}
         <div
-          className="mb-3 rounded-md px-4 py-3"
-          style={{ background: "var(--panel)", border: "1px solid var(--line)" }}
+          className="mb-3 rounded-2xl px-4 py-3"
+          style={{ background: "var(--panel)", border: "1.5px solid var(--line)" }}
         >
           <div className="silkscreen mb-2" style={{ fontSize: "0.55rem", color: "var(--ink-dim)" }}>
             team setup
@@ -239,7 +239,7 @@ export function SettingsSheet({
                 className="flex-1 rounded px-3 py-2 text-sm outline-none"
                 style={{
                   background: "var(--panel-2)",
-                  border: "1px solid var(--line)",
+                  border: "1.5px solid var(--line)",
                   color: "var(--ink)",
                 }}
               />
@@ -270,8 +270,8 @@ export function SettingsSheet({
                 style={{
                   fontSize: "0.62rem",
                   background: config?.aiEnabled ? "var(--rx)" : "var(--panel-2)",
-                  color: config?.aiEnabled ? "#0b0d11" : "var(--ink-dim)",
-                  border: "1px solid var(--line)",
+                  color: config?.aiEnabled ? "#f7f5f0" : "var(--ink-dim)",
+                  border: "1.5px solid var(--line)",
                 }}
               >
                 {config?.aiEnabled ? "on" : "off"}

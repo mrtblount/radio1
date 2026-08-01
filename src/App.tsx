@@ -10,6 +10,7 @@ import { JoinScreen } from "./components/JoinScreen";
 import { ChannelScreen, type DirectInfo } from "./components/ChannelScreen";
 import { ChannelSelect } from "./components/ChannelSelect";
 import { TabBar, type ShellTab } from "./components/shell/TabBar";
+import { SideRail } from "./components/shell/SideRail";
 import { SettingsSheet } from "./components/shell/SettingsSheet";
 import { ChatTab, type PendingDm } from "./components/chat/ChatTab";
 import { OpsTab } from "./components/ops/OpsTab";
@@ -214,11 +215,23 @@ export default function App() {
   const showOps = config?.aiEnabled ?? false;
   const activeTab: ShellTab = tab === "ops" && !showOps ? "radio" : tab;
 
+  const shellProps = {
+    tab: activeTab,
+    onTab: setTab,
+    showOps,
+    chatUnread: unread?.total ?? 0,
+    chatMentions: unread?.mentions ?? 0,
+    radioActive: state.screen === "channel",
+    onSettings: () => setShowSettings(true),
+  };
+
   return (
-    <div className="mx-auto flex h-full max-w-md flex-col">
-      <div className="min-h-0 flex-1">
+    <div className="flex h-full">
+      <SideRail {...shellProps} />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className="min-h-0 flex-1">
         {/* Tabs stay mounted — switching never tears down the radio (I6). */}
-        <div className={activeTab === "radio" ? "h-full" : "hidden"}>
+        <div className={activeTab === "radio" ? "mx-auto h-full w-full max-w-xl" : "hidden"}>
           {state.screen === "channel" ? (
             <ChannelScreen
               state={state}
@@ -263,6 +276,28 @@ export default function App() {
             onGoDirect={(otherUserId, otherName) => {
               void goDirect(otherUserId, otherName);
             }}
+            radio={{
+              onChannel:
+                state.screen === "channel" && !state.joining
+                  ? state.channel
+                  : null,
+              talking: state.talking,
+              busy: state.busy,
+              requesting: state.requesting,
+              receiving:
+                state.screen === "channel" &&
+                state.floor !== null &&
+                state.floor.sessionId !== state.sessionId,
+              join: (channelKey: string) => {
+                setDirect(null);
+                if (state.screen === "channel") leave();
+                void join(identity.name, channelKey, identity.code);
+              },
+              pressPTT: () => {
+                void pressPTT();
+              },
+              releasePTT,
+            }}
           />
         </div>
         {showOps && (
@@ -276,16 +311,11 @@ export default function App() {
             />
           </div>
         )}
+        </div>
+        <div className="md:hidden">
+          <TabBar {...shellProps} />
+        </div>
       </div>
-      <TabBar
-        tab={activeTab}
-        onTab={setTab}
-        showOps={showOps}
-        chatUnread={unread?.total ?? 0}
-        chatMentions={unread?.mentions ?? 0}
-        radioActive={state.screen === "channel"}
-        onSettings={() => setShowSettings(true)}
-      />
       <SettingsSheet
         open={showSettings}
         identity={identity}

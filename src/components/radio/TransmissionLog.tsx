@@ -29,14 +29,14 @@ export function TransmissionLog({ open, channel, accessCode, onClose }: Props) {
   return (
     <div
       className="fixed inset-0 z-40 flex items-end justify-center"
-      style={{ background: "rgba(0,0,0,0.6)" }}
+      style={{ background: "rgba(27,26,30,0.45)" }}
       onClick={onClose}
     >
       <div
-        className="flex max-h-[80%] w-full max-w-md flex-col rounded-t-xl px-4 pt-4"
+        className="flex max-h-[80%] w-full max-w-md flex-col rounded-t-3xl px-4 pt-4"
         style={{
           background: "var(--chassis)",
-          border: "1px solid var(--line)",
+          border: "1.5px solid var(--line)",
           paddingBottom: "max(env(safe-area-inset-bottom), 1.5rem)",
         }}
         onClick={(e) => e.stopPropagation()}
@@ -59,7 +59,7 @@ export function TransmissionLog({ open, channel, accessCode, onClose }: Props) {
             style={{
               fontSize: "0.6rem",
               color: "var(--ink-dim)",
-              border: "1px solid var(--line)",
+              border: "1.5px solid var(--line)",
             }}
           >
             close
@@ -80,8 +80,8 @@ export function TransmissionLog({ open, channel, accessCode, onClose }: Props) {
             {(clips ?? []).map((c) => (
               <li
                 key={c.id}
-                className="rounded-md px-3.5 py-2.5"
-                style={{ background: "var(--panel)", border: "1px solid var(--line)" }}
+                className="rounded-2xl px-3.5 py-2.5"
+                style={{ background: "var(--panel)", border: "1.5px solid var(--line)" }}
               >
                 <div className="flex items-baseline gap-2">
                   <span

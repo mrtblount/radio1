@@ -34,8 +34,8 @@ function TextMd({ md }: { md: string }) {
 function StatCard({ label, value, sub }: StatItem) {
   return (
     <div
-      className="flex-1 rounded-md px-3.5 py-3"
-      style={{ background: "var(--panel)", border: "1px solid var(--line)" }}
+      className="flex-1 rounded-2xl px-3.5 py-3"
+      style={{ background: "var(--panel)", border: "1.5px solid var(--line)" }}
     >
       <div className="silkscreen" style={{ fontSize: "0.52rem", color: "var(--ink-dim)" }}>
         {label}
@@ -74,8 +74,8 @@ function Chart({
 
   return (
     <div
-      className="rounded-md px-3.5 py-3"
-      style={{ background: "var(--panel)", border: "1px solid var(--line)" }}
+      className="rounded-2xl px-3.5 py-3"
+      style={{ background: "var(--panel)", border: "1.5px solid var(--line)" }}
     >
       {title && (
         <div className="silkscreen mb-2" style={{ fontSize: "0.52rem", color: "var(--ink-dim)" }}>
@@ -169,8 +169,8 @@ export function BlockRenderer({ blocks, onAction }: Props) {
             return (
               <div
                 key={i}
-                className="rounded-md px-3.5 py-2"
-                style={{ background: "var(--panel)", border: "1px solid var(--line)" }}
+                className="rounded-2xl px-3.5 py-2"
+                style={{ background: "var(--panel)", border: "1.5px solid var(--line)" }}
               >
                 {(block.items ?? []).map((item, j) => (
                   <div key={j} className="flex items-center gap-2.5 py-1.5">
@@ -201,7 +201,7 @@ export function BlockRenderer({ blocks, onAction }: Props) {
                       fontSize: "0.62rem",
                       background: "var(--panel-2)",
                       color: "var(--ink)",
-                      border: "1px solid var(--line)",
+                      border: "1.5px solid var(--line)",
                     }}
                   >
                     {a.label}
@@ -220,7 +220,7 @@ export function BlockRenderer({ blocks, onAction }: Props) {
                 style={{
                   fontSize: "0.62rem",
                   color: "var(--rx)",
-                  border: "1px solid var(--line)",
+                  border: "1.5px solid var(--line)",
                 }}
               >
                 {block.label ?? block.url} ↗

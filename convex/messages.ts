@@ -85,6 +85,22 @@ export const send = mutation({
       messageId,
     });
 
+    // v3 channel agents: a human text message is the text trigger (DMs have
+    // no agents; team channels only). Never let this break the send path.
+    if (channel.kind === "team") {
+      try {
+        await ctx.runMutation(internal.agents.maybeTrigger, {
+          channelKey,
+          text: clean,
+          speakerId: userId,
+          speakerName: name,
+          source: "text",
+        });
+      } catch (err) {
+        console.warn("[agents] text trigger failed", err);
+      }
+    }
+
     // Sender has obviously read their own message.
     await upsertRead(ctx, userId, channelKey, now);
 

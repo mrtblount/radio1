@@ -1,4 +1,5 @@
 import { formatTime } from "../../lib/platform/format";
+import { channelSlab } from "../../lib/platform/palette";
 
 export type AlertLevel = "all" | "mentions" | "mute";
 
@@ -6,6 +7,7 @@ export interface TeamChannelRow {
   key: string;
   name: string;
   postRestricted: boolean;
+  mode?: "ptt" | "text";
   unread: number;
   mentionUnread: number;
   alertLevel: AlertLevel;
@@ -40,7 +42,7 @@ function RowBadges({
         <span
           className="silkscreen rounded-full px-2 py-0.5"
           data-testid="mention-badge"
-          style={{ fontSize: "0.6rem", background: "var(--tx)", color: "#141414" }}
+          style={{ fontSize: "0.6rem", background: "var(--tx)", color: "#f7f5f0" }}
         >
           @{mentionUnread}
         </span>
@@ -49,7 +51,7 @@ function RowBadges({
         <span
           className="silkscreen rounded-full px-2 py-0.5"
           data-testid="unread-badge"
-          style={{ fontSize: "0.6rem", background: "var(--rx)", color: "#0b0d11" }}
+          style={{ fontSize: "0.6rem", background: "var(--rx)", color: "#f7f5f0" }}
         >
           {unread}
         </span>
@@ -61,6 +63,8 @@ function RowBadges({
 interface Props {
   team: TeamChannelRow[];
   dms: DmRow[];
+  /** Desktop split-pane: the currently open thread's key. */
+  activeKey?: string | null;
   onOpenTeam: (channel: TeamChannelRow) => void;
   onOpenDm: (dm: DmRow) => void;
   onNewChannel: () => void;
@@ -78,6 +82,7 @@ function preview(
 export function ChannelList({
   team,
   dms,
+  activeKey,
   onOpenTeam,
   onOpenDm,
   onNewChannel,
@@ -99,8 +104,8 @@ export function ChannelList({
               team net · live
             </span>
           </div>
-          <h1 className="display-type font-bold leading-none" style={{ fontSize: "2rem" }}>
-            Chat
+          <h1 className="display-num" style={{ fontSize: "2.4rem" }}>
+            CHAT
           </h1>
         </div>
         <div className="flex gap-2">
@@ -108,12 +113,8 @@ export function ChannelList({
             type="button"
             data-testid="new-dm"
             onClick={onDirectMessage}
-            className="silkscreen rounded px-3 py-2"
-            style={{
-              fontSize: "0.62rem",
-              color: "var(--ink-dim)",
-              border: "1px solid var(--line)",
-            }}
+            className="pill quiet silkscreen"
+            style={{ fontSize: "0.6rem", padding: "8px 14px" }}
           >
             direct
           </button>
@@ -121,12 +122,8 @@ export function ChannelList({
             type="button"
             data-testid="new-channel"
             onClick={onNewChannel}
-            className="silkscreen rounded px-3 py-2"
-            style={{
-              fontSize: "0.62rem",
-              color: "var(--ink-dim)",
-              border: "1px solid var(--line)",
-            }}
+            className="pill on silkscreen"
+            style={{ fontSize: "0.6rem", padding: "8px 14px" }}
           >
             + channel
           </button>
@@ -152,20 +149,28 @@ export function ChannelList({
                   data-testid={`chat-channel-${c.key}`}
                   data-muted={muted || undefined}
                   onClick={() => onOpenTeam(c)}
-                  className="flex w-full items-center gap-3 rounded-md px-3.5 py-3 text-left"
+                  className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left"
                   style={{
-                    background: "var(--panel)",
+                    background: activeKey === c.key ? "var(--surface-2)" : "var(--surface)",
                     opacity: muted && !mention ? 0.6 : 1,
-                    border: `1px solid ${
-                      mention ? "var(--tx)" : lit ? "var(--rx)" : "var(--line)"
+                    border: `1.5px solid ${
+                      mention
+                        ? "var(--tx)"
+                        : activeKey === c.key
+                          ? "var(--ink)"
+                          : lit
+                            ? "var(--rx)"
+                            : "var(--line)"
                     }`,
+                    cursor: "pointer",
                   }}
                 >
                   <span
-                    className={`led ${
-                      mention ? "on-tx rx-blink" : lit ? "on-rx rx-blink" : ""
-                    }`}
-                  />
+                    className={`slab ${channelSlab(c.key)} display-num flex h-10 w-10 shrink-0 items-center justify-center`}
+                    style={{ fontSize: "1rem", borderRadius: 12 }}
+                  >
+                    {c.name.trim().charAt(0).toUpperCase()}
+                  </span>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-baseline gap-2">
                       <span className="text-base font-medium">{c.name}</span>
@@ -234,20 +239,34 @@ export function ChannelList({
                     data-testid={`chat-dm-${d.otherUserId}`}
                     data-muted={muted || undefined}
                     onClick={() => onOpenDm(d)}
-                    className="flex w-full items-center gap-3 rounded-md px-3.5 py-3 text-left"
+                    className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left"
                     style={{
-                      background: "var(--panel)",
+                      background: activeKey === d.key ? "var(--surface-2)" : "var(--surface)",
                       opacity: muted && d.mentionUnread === 0 ? 0.6 : 1,
-                      border: `1px solid ${
+                      border: `1.5px solid ${
                         d.mentionUnread > 0
                           ? "var(--tx)"
-                          : d.unread > 0 && !muted
-                            ? "var(--rx)"
-                            : "var(--line)"
+                          : activeKey === d.key
+                            ? "var(--ink)"
+                            : d.unread > 0 && !muted
+                              ? "var(--rx)"
+                              : "var(--line)"
                       }`,
+                      cursor: "pointer",
                     }}
                   >
-                    <span className={`led ${d.online ? "on-rx" : ""}`} />
+                    <span className="relative shrink-0">
+                      <span
+                        className="slab slab-rose display-num flex h-10 w-10 items-center justify-center"
+                        style={{ fontSize: "1rem", borderRadius: 9999 }}
+                      >
+                        {d.name.trim().charAt(0).toUpperCase()}
+                      </span>
+                      <span
+                        className={`led absolute -bottom-0.5 -right-0.5 ${d.online ? "on-rx" : ""}`}
+                        style={{ border: "2px solid var(--surface)", width: 11, height: 11 }}
+                      />
+                    </span>
                     <span className="min-w-0 flex-1">
                       <span className="flex items-baseline gap-2">
                         <span className="text-base font-medium">{d.name}</span>
