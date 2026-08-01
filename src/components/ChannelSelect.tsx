@@ -1,6 +1,7 @@
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { CHANNELS } from "../lib/radio/types";
+import { channelSlab } from "../lib/platform/palette";
 
 interface Props {
   accessCode: string;
@@ -36,11 +37,10 @@ export function ChannelSelect({ accessCode, joining, joinError, onPick }: Props)
             two-way · ready
           </span>
         </div>
-        <h1
-          className="display-type font-bold leading-none"
-          style={{ fontSize: "2.4rem", letterSpacing: "0.02em" }}
-        >
-          Go On Duty
+        <h1 className="display-num" style={{ fontSize: "3rem" }}>
+          GO ON
+          <br />
+          DUTY
         </h1>
         <p className="mt-2 text-sm" style={{ color: "var(--ink-dim)" }}>
           Pick a channel. Hold the key. Talk.
@@ -55,20 +55,18 @@ export function ChannelSelect({ accessCode, joining, joinError, onPick }: Props)
             data-testid={`channel-${ch.key}`}
             disabled={joining}
             onClick={() => onPick(ch.key)}
-            className="channel-key flex items-center gap-4 rounded-md px-4 py-3.5 text-left"
+            className={`slab ${channelSlab(ch.key)} flex items-center gap-4 px-5 py-5 text-left transition-transform active:translate-y-[2px]`}
+            style={{ border: "none", cursor: "pointer" }}
           >
-            <span
-              className="display-type font-bold"
-              style={{ fontSize: "1.1rem", color: "var(--ink-dim)" }}
-            >
-              CH{i + 1}
+            <span className="display-num" style={{ fontSize: "1.6rem", opacity: 0.85 }}>
+              {String(i + 1).padStart(2, "0")}
             </span>
-            <span className="text-base font-medium">{ch.name}</span>
+            <span className="text-lg font-semibold">{ch.name}</span>
             <span
               className="silkscreen ml-auto"
-              style={{ fontSize: "0.55rem", color: "var(--ink-dim)" }}
+              style={{ fontSize: "0.58rem", opacity: 0.85 }}
             >
-              {joining ? "keying…" : "join"}
+              {joining ? "keying…" : "join →"}
             </span>
           </button>
         ))}

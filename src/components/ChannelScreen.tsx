@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { RadioState } from "../hooks/useRadio";
 import { CHANNELS } from "../lib/radio/types";
 import { loadAccessCode } from "../lib/platform/identity";
+import { channelColor } from "../lib/platform/palette";
 import { PTTButton, type PTTVisualState } from "./PTTButton";
 import { TransmissionLog } from "./radio/TransmissionLog";
 
@@ -98,11 +99,8 @@ export function ChannelScreen({
       }}
     >
       {/* Top plate: channel + status lamps */}
-      <header
-        className="flex items-center justify-between rounded-md px-4 py-3"
-        style={{ background: "var(--panel)", border: "1px solid var(--line)" }}
-      >
-        <div>
+      <header className="flex items-end justify-between px-1 pt-1">
+        <div className="min-w-0">
           <div className="silkscreen" style={{ fontSize: "0.6rem", color: direct ? "var(--rx)" : "var(--ink-dim)" }}>
             {direct
               ? "direct · private"
@@ -110,9 +108,13 @@ export function ChannelScreen({
                 ? `channel ${String(channelIndex + 1).padStart(2, "0")}`
                 : "team channel"}
           </div>
-          <div className="display-type font-bold" style={{ fontSize: "1.5rem" }} data-testid="channel-title">
+          <div className="display-num truncate" style={{ fontSize: "2.3rem" }} data-testid="channel-title">
             {direct ? direct.otherName : channel}
           </div>
+          <div
+            className="mt-1.5 h-[5px] w-16 rounded-full"
+            style={{ background: direct ? "var(--rose)" : channelColor(channel) }}
+          />
         </div>
         <div className="flex items-center gap-4">
           <div className="flex flex-col items-center gap-1">
@@ -131,12 +133,8 @@ export function ChannelScreen({
             type="button"
             data-testid="log-button"
             onClick={() => setShowLog(true)}
-            className="silkscreen rounded px-3 py-2"
-            style={{
-              fontSize: "0.65rem",
-              color: "var(--ink-dim)",
-              border: "1px solid var(--line)",
-            }}
+            className="pill quiet silkscreen"
+            style={{ fontSize: "0.62rem", padding: "8px 14px" }}
           >
             log
           </button>
@@ -145,12 +143,13 @@ export function ChannelScreen({
               type="button"
               data-testid="direct-return"
               onClick={direct.onReturn}
-              className="silkscreen rounded px-3 py-2"
+              className="pill silkscreen"
               style={{
-                fontSize: "0.65rem",
-                color: "#f7f5f0",
+                fontSize: "0.62rem",
+                padding: "8px 14px",
                 background: "var(--rx)",
-                border: "1px solid var(--line)",
+                borderColor: "var(--rx)",
+                color: "#f2f7f0",
               }}
             >
               return
@@ -160,12 +159,8 @@ export function ChannelScreen({
               type="button"
               data-testid="leave-button"
               onClick={onLeave}
-              className="silkscreen rounded px-3 py-2"
-              style={{
-                fontSize: "0.65rem",
-                color: "var(--ink-dim)",
-                border: "1px solid var(--line)",
-              }}
+              className="pill silkscreen"
+              style={{ fontSize: "0.62rem", padding: "8px 14px" }}
             >
               off duty
             </button>
@@ -175,23 +170,19 @@ export function ChannelScreen({
 
       {/* Now-speaking readout */}
       <div
-        className="mt-3 flex min-h-14 items-center justify-center rounded-md px-4"
-        style={{
-          background: receiving || talking ? "color-mix(in srgb, var(--rx) 8%, transparent)" : "var(--panel)",
-          border: `1px solid ${
-            talking ? "var(--tx)" : receiving ? "var(--rx)" : "var(--line)"
-          }`,
-        }}
+        className={`mt-4 flex min-h-16 items-center justify-center rounded-[18px] px-4 transition-colors ${
+          talking ? "slab slab-coral" : receiving ? "slab slab-sage" : "slab-paper slab"
+        }`}
         data-testid="now-speaking"
       >
         {talking ? (
-          <span className="display-type font-bold" style={{ color: "var(--tx)", fontSize: "1.1rem" }}>
+          <span className="display-type" style={{ fontSize: "1.15rem" }}>
             ● ON AIR — {direct ? `DIRECT TO ${direct.otherName.toUpperCase()}` : "CHANNEL IS YOURS"}
           </span>
         ) : receiving ? (
           <span
-            className="display-type font-bold"
-            style={{ color: "var(--rx)", fontSize: "1.1rem" }}
+            className="display-type"
+            style={{ fontSize: "1.15rem" }}
             data-testid="receiving-banner"
           >
             ▶ {floor!.name} TRANSMITTING
@@ -223,7 +214,7 @@ export function ChannelScreen({
                     ? () => setActionMember({ userId: m.userId!, name: m.name })
                     : undefined
                 }
-                className="flex items-center gap-3 rounded-md px-3.5 py-2.5"
+                className="flex items-center gap-3 rounded-2xl px-4 py-3"
                 style={{
                   background: "var(--panel)",
                   border: `1px solid ${isTalking ? "var(--rx)" : "var(--line)"}`,
@@ -297,7 +288,7 @@ export function ChannelScreen({
           onClick={() => setActionMember(null)}
         >
           <div
-            className="w-full max-w-md rounded-t-xl px-5 pt-4"
+            className="w-full max-w-md rounded-t-3xl px-5 pt-4"
             style={{
               background: "var(--panel)",
               border: "1px solid var(--line)",
@@ -325,12 +316,14 @@ export function ChannelScreen({
                     onGoDirectMember(actionMember.userId, actionMember.name);
                     setActionMember(null);
                   }}
-                  className="display-type flex-1 rounded-md py-3.5 font-bold"
+                  className="display-type flex-1 rounded-full py-3.5"
                   style={{
                     fontSize: "1rem",
-                    letterSpacing: "0.06em",
-                    background: "var(--rx)",
-                    color: "#f7f5f0",
+                    letterSpacing: "0.05em",
+                    border: "none",
+                    cursor: "pointer",
+                    background: "var(--ink)",
+                    color: "var(--canvas)",
                   }}
                 >
                   GO DIRECT
@@ -344,13 +337,14 @@ export function ChannelScreen({
                     onMessageMember(actionMember.userId, actionMember.name);
                     setActionMember(null);
                   }}
-                  className="display-type flex-1 rounded-md py-3.5 font-bold"
+                  className="display-type flex-1 rounded-full py-3.5"
                   style={{
                     fontSize: "1rem",
-                    letterSpacing: "0.06em",
-                    background: "var(--panel-2)",
+                    letterSpacing: "0.05em",
+                    cursor: "pointer",
+                    background: "transparent",
                     color: "var(--ink)",
-                    border: "1px solid var(--line)",
+                    border: "1.5px solid var(--line-strong)",
                   }}
                 >
                   MESSAGE

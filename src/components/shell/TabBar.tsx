@@ -42,8 +42,8 @@ export function TabBar({
     <nav
       className="flex items-stretch"
       style={{
-        background: "var(--panel)",
-        borderTop: "1px solid var(--line)",
+        background: "var(--surface)",
+        borderTop: "1.5px solid var(--line)",
         paddingBottom: "env(safe-area-inset-bottom)",
       }}
     >
@@ -71,14 +71,13 @@ export function TabBar({
               style={{ width: 8, height: 8 }}
             />
             <span
-              className="silkscreen"
+              className="silkscreen rounded-full"
               style={{
                 fontSize: "0.62rem",
-                color: selected ? "var(--ink)" : "var(--ink-dim)",
-                borderBottom: selected
-                  ? "2px solid var(--tx)"
-                  : "2px solid transparent",
-                paddingBottom: 2,
+                padding: "4px 12px",
+                color: selected ? "var(--canvas)" : "var(--ink-dim)",
+                background: selected ? "var(--ink)" : "transparent",
+                transition: "background 120ms ease, color 120ms ease",
               }}
             >
               {item.label}
